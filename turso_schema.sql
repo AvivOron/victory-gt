@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS promos (
   description      TEXT,
   discount_rate    TEXT,
   min_qty          TEXT,
+  max_qty          TEXT,
   min_purchase_amount TEXT,
   discounted_price TEXT,
   start_date       TEXT,

@@ -23,6 +23,7 @@ export interface Promo {
   description: string;
   discount_rate: string;
   min_qty: string;
+  max_qty: string;
   min_purchase_amount: string;
   discounted_price: string;
   start_date: string;

@@ -390,6 +390,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mt-2">
                       {promo.discounted_price && <span>מחיר: <strong className="text-green-700">{formatCurrency(promo.discounted_price)}</strong></span>}
                       {promo.min_qty && <span>מינ׳ כמות: {promo.min_qty}</span>}
+                      {promo.max_qty && <span>מקס׳ כמות: {promo.max_qty}</span>}
                       {promo.min_purchase_amount && <span>מינ׳ קנייה: <strong className="text-gray-700">{formatCurrency(promo.min_purchase_amount)}</strong></span>}
                       {promo.end_date && <span className="text-xs text-gray-400">עד {String(promo.end_date).slice(0, 10)}</span>}
                     </div>

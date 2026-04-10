@@ -411,6 +411,7 @@ def parse_promos(data: bytes, branch_id: str) -> list[dict]:
                 "description": get_text(promo, "PromotionDescription") or get_text(promo, "RewardDescription"),
                 "discount_rate": get_text(promo, "DiscountRate"),
                 "min_qty": get_text(promo, "MinQty"),
+                "max_qty": get_text(promo, "MaxQty"),
                 "min_purchase_amount": get_text(promo, "MinPurchaseAmnt") or get_text(promo, "MinPurchaseAmount"),
                 "discounted_price": get_text(promo, "DiscountedPrice"),
                 "start_date": get_text(promo, "PromotionStartDate"),
@@ -433,6 +434,7 @@ def parse_promos(data: bytes, branch_id: str) -> list[dict]:
                     "description": get_text(sale, "PromotionDescription") or get_text(sale, "RewardDescription"),
                     "discount_rate": get_text(sale, "DiscountRate"),
                     "min_qty": get_text(sale, "MinQty"),
+                    "max_qty": get_text(sale, "MaxQty"),
                     "min_purchase_amount": get_text(sale, "MinPurchaseAmnt") or get_text(sale, "MinPurchaseAmount"),
                     "discounted_price": get_text(sale, "DiscountedPrice"),
                     "start_date": get_text(sale, "PromotionStartDate"),
@@ -516,8 +518,8 @@ def upsert_promos(rows: list[dict]) -> None:
         return
     log.info("Upserting %d promos...", len(rows))
     stmts = [
-        {"sql": "INSERT OR REPLACE INTO promos (promotion_id,branch_id,description,discount_rate,min_qty,min_purchase_amount,discounted_price,start_date,end_date,item_codes,last_updated) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-         "args": [r["promotion_id"], r["branch_id"], r["description"], r["discount_rate"], r["min_qty"], r["min_purchase_amount"], r["discounted_price"], r["start_date"], r["end_date"], r["item_codes"], r["last_updated"]]}
+        {"sql": "INSERT OR REPLACE INTO promos (promotion_id,branch_id,description,discount_rate,min_qty,max_qty,min_purchase_amount,discounted_price,start_date,end_date,item_codes,last_updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+         "args": [r["promotion_id"], r["branch_id"], r["description"], r["discount_rate"], r["min_qty"], r["max_qty"], r["min_purchase_amount"], r["discounted_price"], r["start_date"], r["end_date"], r["item_codes"], r["last_updated"]]}
         for r in rows
     ]
     for i in range(0, len(stmts), BATCH):
