@@ -55,6 +55,7 @@ SESSION.mount("https://", requests.adapters.HTTPAdapter(pool_connections=8, pool
 _DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_CACHE = os.path.join(_DIR, "filelist_cache.json")
 CATEGORY_CACHE = os.path.join(_DIR, "category_cache.json")
+LAST_FILES_CACHE = os.path.join(_DIR, "last_files_cache.json")
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
@@ -616,12 +617,28 @@ def run_scan() -> None:
         fh.write(branch_id)
     log.info("Using branch ID: %s", branch_id)
 
+    branch_files = sorted(f for f in files if f"-{branch_id}-" in f)
+
+    # Skip if source files haven't changed since last successful scan
+    try:
+        with open(LAST_FILES_CACHE) as fh:
+            last_files = json.load(fh)
+        if last_files == branch_files:
+            log.info("Source files unchanged — skipping upsert.")
+            log.info("=== Scan complete in %.1fs ===", time.time() - start)
+            return
+    except Exception:
+        pass
+
     products, promos = fetch_branch_data(branch_id, files)
     products = categorize_products(products)
     upsert_products(products)
     upsert_promos(promos)
     delete_stale_products(branch_id, {p["item_code"] for p in products})
     delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
+
+    with open(LAST_FILES_CACHE, "w") as fh:
+        json.dump(branch_files, fh)
 
     log.info("=== Scan complete in %.1fs ===", time.time() - start)
 

@@ -40,24 +40,6 @@ function parseItemCodes(raw: unknown): string[] {
   }
 }
 
-function positiveNumber(value: string): number | null {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-function discountValue(promo: EnrichedPromo): number {
-  const minQty = positiveNumber(promo.min_qty);
-  const discountedPrice = positiveNumber(promo.discounted_price);
-
-  if (minQty && discountedPrice && promo.original_items.length > 0) {
-    return Math.max(
-      ...promo.original_items.map(item => Math.max(0, Number(item.item_price) * minQty - discountedPrice))
-    );
-  }
-
-  return positiveNumber(promo.discount_rate) ?? 0;
-}
-
 async function enrichPromos(promos: PromoRow[]): Promise<EnrichedPromo[]> {
   const uniqueCodes = Array.from(new Set(promos.flatMap(promo => parseItemCodes(promo.item_codes))));
   const pricesByCode = new Map<string, PriceRow>();
@@ -95,7 +77,6 @@ export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get("q")?.trim() || "";
   const category = req.nextUrl.searchParams.get("category")?.trim() || "";
   const page = Math.max(1, parseInt(req.nextUrl.searchParams.get("page") || "1"));
-  const sort = req.nextUrl.searchParams.get("sort") === "biggest_discount" ? "biggest_discount" : "latest";
   const offset = (page - 1) * PAGE_SIZE;
   let productTotal: number | null = null;
 
@@ -140,48 +121,12 @@ export async function GET(req: NextRequest) {
     const categoryPromos = enrichedPromos.filter(promo =>
       promo.original_items.some(item => item.category === category)
     );
-    const sortedPromos = sort === "biggest_discount"
-      ? categoryPromos.sort((a, b) => discountValue(b) - discountValue(a))
-      : categoryPromos;
-    const total = sortedPromos.length;
+    const total = categoryPromos.length;
 
-    return NextResponse.json({
-      promos: sortedPromos.slice(offset, offset + PAGE_SIZE),
-      total,
-      productTotal,
-      page,
-      pages: Math.ceil(total / PAGE_SIZE),
-    });
-  }
-
-  const countResultPromise = db.execute({
-    sql: `SELECT COUNT(*) as total FROM promos ${where}`,
-    args,
-  });
-
-  if (sort === "biggest_discount") {
-    const [result, countResult] = await Promise.all([
-      db.execute({
-        sql: `SELECT promotion_id,description,discount_rate,min_qty,max_qty,min_purchase_amount,discounted_price,start_date,end_date,item_codes,last_updated
-              FROM promos ${where} ORDER BY start_date DESC`,
-        args,
-      }),
-      countResultPromise,
-    ]);
-
-    const total = Number(countResult.rows[0]?.total ?? 0);
-    const enrichedPromos = await enrichPromos(result.rows.map(r => ({ ...r })) as unknown as PromoRow[]);
-    const sortedPromos = enrichedPromos
-      .sort((a, b) => discountValue(b) - discountValue(a))
-      .slice(offset, offset + PAGE_SIZE);
-
-    return NextResponse.json({
-      promos: sortedPromos,
-      total,
-      productTotal,
-      page,
-      pages: Math.ceil(total / PAGE_SIZE),
-    });
+    return NextResponse.json(
+      { promos: categoryPromos.slice(offset, offset + PAGE_SIZE), total, productTotal, page, pages: Math.ceil(total / PAGE_SIZE) },
+      { headers: { "Cache-Control": "public, s-maxage=10800, stale-while-revalidate=3600" } }
+    );
   }
 
   const [result, countResult] = await Promise.all([
@@ -190,17 +135,17 @@ export async function GET(req: NextRequest) {
             FROM promos ${where} ORDER BY start_date DESC LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
       args,
     }),
-    countResultPromise,
+    db.execute({
+      sql: `SELECT COUNT(*) as total FROM promos ${where}`,
+      args,
+    }),
   ]);
 
   const total = Number(countResult.rows[0]?.total ?? 0);
   const promos = result.rows.map(r => ({ ...r })) as unknown as PromoRow[];
 
-  return NextResponse.json({
-    promos: await enrichPromos(promos),
-    total,
-    productTotal,
-    page,
-    pages: Math.ceil(total / PAGE_SIZE),
-  });
+  return NextResponse.json(
+    { promos: await enrichPromos(promos), total, productTotal, page, pages: Math.ceil(total / PAGE_SIZE) },
+    { headers: { "Cache-Control": "public, s-maxage=10800, stale-while-revalidate=3600" } }
+  );
 }

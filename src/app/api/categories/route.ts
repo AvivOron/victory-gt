@@ -20,33 +20,13 @@ export async function GET() {
           ORDER BY total DESC, category ASC`,
     args,
   });
-  const promoConditions: string[] = [];
-  const promoArgs: string[] = [];
-
-  if (BRANCH) {
-    promoConditions.push("p.branch_id = ?");
-    promoArgs.push(BRANCH);
-  }
-
-  const promoResult = await db.execute({
-    sql: `SELECT pr.category, COUNT(DISTINCT p.promotion_id) as total
-          FROM promos p
-          JOIN products pr
-            ON p.item_codes LIKE ('%"' || pr.item_code || '"%')
-            ${BRANCH ? "AND pr.branch_id = p.branch_id" : ""}
-          ${promoConditions.length ? `WHERE ${promoConditions.join(" AND ")}` : ""}
-          GROUP BY pr.category`,
-    args: promoArgs,
-  });
-  const promoTotals = new Map(
-    promoResult.rows.map(row => [String(row.category), Number(row.total ?? 0)])
+  return NextResponse.json(
+    {
+      categories: result.rows.map(row => ({
+        name: String(row.category),
+        total: Number(row.total ?? 0),
+      })),
+    },
+    { headers: { "Cache-Control": "public, s-maxage=10800, stale-while-revalidate=3600" } }
   );
-
-  return NextResponse.json({
-    categories: result.rows.map(row => ({
-      name: String(row.category),
-      total: Number(row.total ?? 0),
-      promoTotal: promoTotals.get(String(row.category)) ?? 0,
-    })),
-  });
 }

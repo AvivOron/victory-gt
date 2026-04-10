@@ -159,14 +159,17 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({
-    products: products.map(product => ({
-      ...product,
-      discount_promos: promosByCode.get(product.item_code) ?? [],
-    })),
-    total,
-    promoTotal: filteredPromoTotal,
-    page,
-    pages: Math.ceil(total / PAGE_SIZE),
-  });
+  return NextResponse.json(
+    {
+      products: products.map(product => ({
+        ...product,
+        discount_promos: promosByCode.get(product.item_code) ?? [],
+      })),
+      total,
+      promoTotal: filteredPromoTotal,
+      page,
+      pages: Math.ceil(total / PAGE_SIZE),
+    },
+    { headers: { "Cache-Control": "public, s-maxage=10800, stale-while-revalidate=3600" } }
+  );
 }

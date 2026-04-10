@@ -6,7 +6,6 @@ import type { Product, Promo } from "@/lib/db";
 type Tab = "prices" | "promos";
 type SortCol = "item_name" | "item_price" | "manufacturer_name" | "item_code";
 type SortDir = "asc" | "desc";
-type PromoSort = "latest" | "biggest_discount";
 const PAGE_SIZE = 20;
 
 interface ProductsResponse {
@@ -32,7 +31,6 @@ interface CategoriesResponse {
 interface CategoryOption {
   name: string;
   total: number;
-  promoTotal: number;
 }
 
 interface Props {
@@ -49,7 +47,6 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [sortCol, setSortCol] = useState<SortCol>("item_name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const [promoSort, setPromoSort] = useState<PromoSort>("latest");
   const [page, setPage] = useState(1);
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -60,7 +57,6 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
   const [promoTotal, setPromoTotal] = useState(promoCount);
   const [promoPages, setPromoPages] = useState(1);
-  const [promoSortPending, setPromoSortPending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [, startTransition] = useTransition();
 
@@ -71,7 +67,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   }, [search]);
 
   // Reset page on search/sort change
-  useEffect(() => { setPage(1); }, [debouncedSearch, category, sortCol, sortDir, promoSort, tab]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, category, sortCol, sortDir, tab]);
 
   useEffect(() => {
     async function fetchCategories() {
@@ -111,12 +107,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   const fetchPromos = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        q: debouncedSearch,
-        category,
-        page: String(page),
-        sort: promoSort,
-      });
+      const params = new URLSearchParams({ q: debouncedSearch, category, page: String(page) });
       const res = await fetch(`/victory-gt/api/promos?${params}`);
       const data: PromosResponse = await res.json();
       setPromos(data.promos);
@@ -126,9 +117,8 @@ export default function PriceTable({ productCount, promoCount }: Props) {
       setPromoPages(data.pages);
     } finally {
       setLoading(false);
-      setPromoSortPending(false);
     }
-  }, [debouncedSearch, category, page, promoSort, productCount]);
+  }, [debouncedSearch, category, page, productCount]);
 
   useEffect(() => {
     if (tab === "prices") fetchProducts();
@@ -142,19 +132,13 @@ export default function PriceTable({ productCount, promoCount }: Props) {
     });
   }
 
-  function handlePromoSortToggle() {
-    setPromoSortPending(true);
-    setPromoSort(sort => sort === "biggest_discount" ? "latest" : "biggest_discount");
-  }
-
   function clearFilters() {
     setSearch("");
     setDebouncedSearch("");
     setCategory("");
-    setPromoSort("latest");
   }
 
-  const hasActiveFilters = search || debouncedSearch || category || promoSort !== "latest";
+  const hasActiveFilters = search || debouncedSearch || category;
 
   const sortIcon = (col: SortCol) =>
     sortCol !== col ? " ⇅" : sortDir === "asc" ? " ↑" : " ↓";
@@ -187,20 +171,6 @@ export default function PriceTable({ productCount, promoCount }: Props) {
               מבצעים ({promoTotal.toLocaleString()})
             </TabBtn>
           </div>
-          {tab === "promos" && (
-            <button
-              onClick={handlePromoSortToggle}
-              disabled={promoSortPending}
-              aria-busy={promoSortPending}
-              className={`h-10 min-w-[132px] rounded-lg border px-4 text-sm font-bold transition-all whitespace-nowrap ${
-                promoSort === "biggest_discount"
-                  ? "border-[#171717] bg-[#171717] text-white shadow-sm"
-                  : "border-gray-300 bg-white text-[#171717] hover:border-gray-400 hover:bg-gray-50"
-              } ${promoSortPending ? "opacity-70 cursor-wait" : ""}`}
-            >
-              ההנחה הכי גדולה
-            </button>
-          )}
           <select
             value={category}
             onChange={event => setCategory(event.target.value)}
@@ -210,7 +180,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
             <option value="">{categoriesLoading ? "טוען קטגוריות..." : "כל הקטגוריות"}</option>
             {categories.map(option => (
               <option key={option.name} value={option.name}>
-                {option.name} ({(tab === "promos" ? option.promoTotal : option.total).toLocaleString()})
+                {option.name} ({option.total.toLocaleString()})
               </option>
             ))}
           </select>
