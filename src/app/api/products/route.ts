@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
     }
 
     const promoResult = await db.execute({
-      sql: `SELECT promotion_id,description,discount_rate,min_qty,discounted_price,start_date,end_date,item_codes,branch_id,last_updated
+      sql: `SELECT promotion_id,description,discount_rate,min_qty,min_purchase_amount,discounted_price,start_date,end_date,item_codes,branch_id,last_updated
             FROM promos WHERE ${promoConditions.join(" AND ")}`,
       args: promoArgs,
     });

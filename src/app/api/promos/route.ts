@@ -10,6 +10,7 @@ interface PromoRow {
   description: string;
   discount_rate: string;
   min_qty: string;
+  min_purchase_amount: string;
   discounted_price: string;
   start_date: string;
   end_date: string;
@@ -129,7 +130,7 @@ export async function GET(req: NextRequest) {
 
   if (category) {
     const result = await db.execute({
-      sql: `SELECT promotion_id,description,discount_rate,min_qty,discounted_price,start_date,end_date,item_codes,last_updated
+      sql: `SELECT promotion_id,description,discount_rate,min_qty,min_purchase_amount,discounted_price,start_date,end_date,item_codes,last_updated
             FROM promos ${where} ORDER BY start_date DESC`,
       args,
     });
@@ -160,7 +161,7 @@ export async function GET(req: NextRequest) {
   if (sort === "biggest_discount") {
     const [result, countResult] = await Promise.all([
       db.execute({
-        sql: `SELECT promotion_id,description,discount_rate,min_qty,discounted_price,start_date,end_date,item_codes,last_updated
+        sql: `SELECT promotion_id,description,discount_rate,min_qty,min_purchase_amount,discounted_price,start_date,end_date,item_codes,last_updated
               FROM promos ${where} ORDER BY start_date DESC`,
         args,
       }),
@@ -184,7 +185,7 @@ export async function GET(req: NextRequest) {
 
   const [result, countResult] = await Promise.all([
     db.execute({
-      sql: `SELECT promotion_id,description,discount_rate,min_qty,discounted_price,start_date,end_date,item_codes,last_updated
+      sql: `SELECT promotion_id,description,discount_rate,min_qty,min_purchase_amount,discounted_price,start_date,end_date,item_codes,last_updated
             FROM promos ${where} ORDER BY start_date DESC LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
       args,
     }),
