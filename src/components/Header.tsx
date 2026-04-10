@@ -3,11 +3,9 @@ import type { Branch } from "@/lib/db";
 interface Props {
   branch: Branch | null;
   lastUpdated: string | null;
-  productCount: number;
-  promoCount: number;
 }
 
-export default function Header({ branch, lastUpdated, productCount, promoCount }: Props) {
+export default function Header({ branch, lastUpdated }: Props) {
   const city = branch?.city || "גני תקווה";
   const address = branch?.address || "רחוב הכרמל 20, גני תקווה";
 
@@ -22,34 +20,27 @@ export default function Header({ branch, lastUpdated, productCount, promoCount }
     : null;
 
   return (
-    <header
-      className="text-white px-8 py-5 flex items-center gap-4 shadow-md"
-      style={{ background: "linear-gradient(135deg, #e31837 0%, #c0392b 100%)" }}
-    >
-      <div
-        className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-xl font-black flex-shrink-0"
-        style={{ color: "#e31837" }}
-      >
-        V
-      </div>
-      <div className="flex-1 min-w-0">
-        <h1 className="text-xl sm:text-2xl font-bold leading-tight">
-          ויקטורי {city} — מחירון
-        </h1>
-        <p className="text-sm opacity-85 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
-          <span>{address}</span>
-          {updatedStr && <span className="opacity-70">עודכן: {updatedStr}</span>}
-        </p>
-        <p className="text-xs opacity-75 mt-1 flex gap-3">
-          <span>{productCount.toLocaleString()} מוצרים</span>
-          <span>·</span>
-          <span>{promoCount.toLocaleString()} מבצעים</span>
-        </p>
-      </div>
-      <div className="hidden sm:block mr-auto text-xs opacity-60 text-left flex-shrink-0" dir="ltr">
-        מאגר שקיפות המחירים
-        <br />
-        רשות ההגנה לצרכן
+    <header className="border-b border-gray-200 bg-white">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg bg-[#e31837] text-xl font-black text-white shadow-sm">
+            V
+          </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl font-bold leading-tight text-[#171717] sm:text-3xl">
+              ויקטורי {city} מחירון ומבצעים
+            </h1>
+            <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-gray-500">
+              <span>{address}</span>
+              {updatedStr && <span>עודכן: {updatedStr}</span>}
+            </p>
+          </div>
+          <div className="hidden rounded-lg border border-gray-200 bg-[#f7f8fa] px-4 py-3 text-left text-xs text-gray-500 sm:block" dir="ltr">
+            מאגר שקיפות המחירים
+            <br />
+            רשות ההגנה לצרכן
+          </div>
+        </div>
       </div>
     </header>
   );

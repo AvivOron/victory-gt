@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS products (
   item_price        REAL,
   unit_of_measure   TEXT,
   quantity          TEXT,
+  category          TEXT,
   manufacturer_name TEXT,
   last_updated      TEXT,
   PRIMARY KEY (item_code, branch_id)
@@ -38,4 +39,5 @@ CREATE TABLE IF NOT EXISTS promos (
 
 CREATE INDEX IF NOT EXISTS idx_products_branch ON products(branch_id);
 CREATE INDEX IF NOT EXISTS idx_products_name   ON products(item_name);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_promos_branch   ON promos(branch_id);

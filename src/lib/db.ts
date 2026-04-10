@@ -11,6 +11,7 @@ export interface Product {
   item_price: number;
   unit_of_measure: string;
   quantity: string;
+  category?: string;
   manufacturer_name: string;
   discount_promos?: Promo[];
   branch_id: string;
@@ -35,6 +36,7 @@ export interface PromoOriginalItem {
   item_code: string;
   item_name: string;
   item_price: number;
+  category?: string;
 }
 
 export interface Branch {

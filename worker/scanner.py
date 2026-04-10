@@ -51,9 +51,31 @@ SESSION.headers.update(HEADERS)
 SESSION.mount("https://", requests.adapters.HTTPAdapter(pool_connections=8, pool_maxsize=8))
 
 FILE_CACHE = "filelist_cache.json"
+CATEGORY_CACHE = "category_cache.json"
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 MAX_WORKERS = 4  # conservative for Raspberry Pi
 BATCH = 200      # rows per INSERT batch (SQLite has 999-param limit; 200*8cols=1600 — use individual upserts)
+CATEGORY_BATCH = 80
+DEFAULT_CATEGORY = "אחר"
+CATEGORIES = [
+    "פירות וירקות",
+    "חלב ביצים ומעדנים",
+    "בשר עוף ודגים",
+    "מאפייה ולחמים",
+    "קפואים",
+    "מזווה ובישול",
+    "חטיפים ומתוקים",
+    "משקאות",
+    "פארם וטיפוח",
+    "ניקיון וחד פעמי",
+    "תינוקות",
+    "חיות מחמד",
+    "אחר",
+]
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,6 +112,22 @@ def turso_execute(statements: list[dict]) -> None:
     r.raise_for_status()
 
 
+def turso_execute_ignore_errors(statements: list[dict]) -> None:
+    for statement in statements:
+        try:
+            turso_execute([statement])
+        except Exception as e:
+            log.debug("Ignoring schema statement failure for %s: %s", statement["sql"], e)
+
+
+def ensure_schema() -> None:
+    """Apply lightweight migrations needed by newer scanner versions."""
+    turso_execute_ignore_errors([
+        {"sql": "ALTER TABLE products ADD COLUMN category TEXT", "args": []},
+        {"sql": "CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)", "args": []},
+    ])
+
+
 # ── Fetch helpers ─────────────────────────────────────────────────────────────
 def fetch_bytes(url: str, timeout: int = 30) -> bytes:
     r = SESSION.get(url, timeout=timeout)
@@ -106,6 +144,106 @@ def parse_xml_gz(data: bytes) -> ET.Element:
 def get_text(el: ET.Element, tag: str, default: str = "") -> str:
     child = el.find(tag)
     return child.text.strip() if child is not None and child.text else default
+
+
+# ── AI categorization ─────────────────────────────────────────────────────────
+def load_category_cache() -> dict[str, str]:
+    if not os.path.exists(CATEGORY_CACHE):
+        return {}
+    try:
+      with open(CATEGORY_CACHE) as fh:
+          data = json.load(fh)
+      return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_category_cache(cache: dict[str, str]) -> None:
+    with open(CATEGORY_CACHE, "w") as fh:
+        json.dump(cache, fh, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def normalize_category(value: str) -> str:
+    return value if value in CATEGORIES else DEFAULT_CATEGORY
+
+
+def categorize_with_gemini(rows: list[dict]) -> dict[str, str]:
+    if not GEMINI_API_KEY or not rows:
+        return {}
+
+    prompt_rows = [
+        {
+            "item_code": r["item_code"],
+            "item_name": r.get("item_name", ""),
+            "manufacturer_name": r.get("manufacturer_name", ""),
+        }
+        for r in rows
+    ]
+    prompt = (
+        "Categorize these Israeli supermarket products into exactly one category each. "
+        "Return only a JSON object whose keys are item_code and values are categories. "
+        f"Allowed categories: {', '.join(CATEGORIES)}.\n\n"
+        f"Products:\n{json.dumps(prompt_rows, ensure_ascii=False)}"
+    )
+
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0,
+            "responseMimeType": "application/json",
+        },
+    }
+    response = SESSION.post(
+        GEMINI_API_URL,
+        params={"key": GEMINI_API_KEY},
+        json=payload,
+        timeout=60,
+    )
+    response.raise_for_status()
+    data = response.json()
+    text = data["candidates"][0]["content"]["parts"][0]["text"]
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        parsed = json.loads(match.group(0)) if match else {}
+
+    return {
+        str(code): normalize_category(str(category))
+        for code, category in parsed.items()
+        if isinstance(code, str)
+    }
+
+
+def categorize_products(products: list[dict]) -> list[dict]:
+    if not products:
+        return products
+
+    cache = load_category_cache()
+    uncached = [p for p in products if p["item_code"] not in cache]
+
+    if not GEMINI_API_KEY:
+        for product in products:
+            product["category"] = cache.get(product["item_code"], DEFAULT_CATEGORY)
+        log.info("Gemini key not set; using cached/default categories")
+        return products
+
+    log.info("Categorizing %d uncached products with Gemini", len(uncached))
+    for i in range(0, len(uncached), CATEGORY_BATCH):
+        batch = uncached[i : i + CATEGORY_BATCH]
+        try:
+            cache.update(categorize_with_gemini(batch))
+            save_category_cache(cache)
+            time.sleep(0.2)
+        except Exception as e:
+            log.warning("Gemini categorization failed for batch %d: %s", i // CATEGORY_BATCH + 1, e)
+            for product in batch:
+                cache.setdefault(product["item_code"], DEFAULT_CATEGORY)
+
+    for product in products:
+        product["category"] = cache.get(product["item_code"], DEFAULT_CATEGORY)
+    return products
 
 
 # ── File index ────────────────────────────────────────────────────────────────
@@ -242,6 +380,7 @@ def parse_prices(data: bytes, branch_id: str) -> list[dict]:
                                 or get_text(item, "UnitMeasure")
                                 or get_text(item, "UnitOfMeasure")),
             "quantity": get_text(item, "Quantity") or "1",
+            "category": DEFAULT_CATEGORY,
             # ManufactureName (Victory) vs ManufacturerName (other chains)
             "manufacturer_name": get_text(item, "ManufacturerName") or get_text(item, "ManufactureName"),
             "branch_id": branch_id,
@@ -358,8 +497,8 @@ def upsert_products(rows: list[dict]) -> None:
         return
     log.info("Upserting %d products...", len(rows))
     stmts = [
-        {"sql": "INSERT OR REPLACE INTO products (item_code,branch_id,item_name,item_price,unit_of_measure,quantity,manufacturer_name,last_updated) VALUES (?,?,?,?,?,?,?,?)",
-         "args": [r["item_code"], r["branch_id"], r["item_name"], r["item_price"], r["unit_of_measure"], r["quantity"], r["manufacturer_name"], r["last_updated"]]}
+        {"sql": "INSERT OR REPLACE INTO products (item_code,branch_id,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,last_updated) VALUES (?,?,?,?,?,?,?,?,?)",
+         "args": [r["item_code"], r["branch_id"], r["item_name"], r["item_price"], r["unit_of_measure"], r["quantity"], r.get("category", DEFAULT_CATEGORY), r["manufacturer_name"], r["last_updated"]]}
         for r in rows
     ]
     for i in range(0, len(stmts), BATCH):
@@ -385,6 +524,7 @@ def upsert_promos(rows: list[dict]) -> None:
 def run_scan() -> None:
     log.info("=== Starting Victory GT scan ===")
     start = time.time()
+    ensure_schema()
 
     files = fetch_file_list()
     branches = fetch_branches(files)
@@ -408,6 +548,7 @@ def run_scan() -> None:
     log.info("Using branch ID: %s", branch_id)
 
     products, promos = fetch_branch_data(branch_id, files)
+    products = categorize_products(products)
     upsert_products(products)
     upsert_promos(promos)
 

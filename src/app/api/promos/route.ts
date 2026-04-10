@@ -21,6 +21,7 @@ interface PriceRow {
   item_code: string;
   item_name: string;
   item_price: number;
+  category: string;
 }
 
 interface EnrichedPromo extends PromoRow {
@@ -71,7 +72,7 @@ async function enrichPromos(promos: PromoRow[]): Promise<EnrichedPromo[]> {
     }
 
     const priceResult = await db.execute({
-      sql: `SELECT item_code,item_name,item_price FROM products WHERE ${productConditions.join(" AND ")}`,
+      sql: `SELECT item_code,item_name,item_price,category FROM products WHERE ${productConditions.join(" AND ")}`,
       args: productArgs,
     });
 
@@ -90,9 +91,11 @@ async function enrichPromos(promos: PromoRow[]): Promise<EnrichedPromo[]> {
 
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get("q")?.trim() || "";
+  const category = req.nextUrl.searchParams.get("category")?.trim() || "";
   const page = Math.max(1, parseInt(req.nextUrl.searchParams.get("page") || "1"));
   const sort = req.nextUrl.searchParams.get("sort") === "biggest_discount" ? "biggest_discount" : "latest";
   const offset = (page - 1) * PAGE_SIZE;
+  let productTotal: number | null = null;
 
   const conditions: string[] = [];
   const args: string[] = [];
@@ -102,8 +105,52 @@ export async function GET(req: NextRequest) {
     conditions.push("(description LIKE ? OR promotion_id LIKE ?)");
     args.push(`%${q}%`, `%${q}%`);
   }
+  if (q || category) {
+    const productConditions: string[] = [];
+    const productArgs: string[] = [];
+    if (q) {
+      productConditions.push("(item_name LIKE ? OR item_code LIKE ? OR manufacturer_name LIKE ?)");
+      productArgs.push(`%${q}%`, `%${q}%`, `%${q}%`);
+    }
+    if (category) {
+      productConditions.push("category = ?");
+      productArgs.push(category);
+    }
+    if (BRANCH) { productConditions.push("branch_id = ?"); productArgs.push(BRANCH); }
+    const productWhere = productConditions.length ? `WHERE ${productConditions.join(" AND ")}` : "";
+    const productCountResult = await db.execute({
+      sql: `SELECT COUNT(*) as total FROM products ${productWhere}`,
+      args: productArgs,
+    });
+    productTotal = Number(productCountResult.rows[0]?.total ?? 0);
+  }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  if (category) {
+    const result = await db.execute({
+      sql: `SELECT promotion_id,description,discount_rate,min_qty,discounted_price,start_date,end_date,item_codes,last_updated
+            FROM promos ${where} ORDER BY start_date DESC`,
+      args,
+    });
+
+    const enrichedPromos = await enrichPromos(result.rows.map(r => ({ ...r })) as unknown as PromoRow[]);
+    const categoryPromos = enrichedPromos.filter(promo =>
+      promo.original_items.some(item => item.category === category)
+    );
+    const sortedPromos = sort === "biggest_discount"
+      ? categoryPromos.sort((a, b) => discountValue(b) - discountValue(a))
+      : categoryPromos;
+    const total = sortedPromos.length;
+
+    return NextResponse.json({
+      promos: sortedPromos.slice(offset, offset + PAGE_SIZE),
+      total,
+      productTotal,
+      page,
+      pages: Math.ceil(total / PAGE_SIZE),
+    });
+  }
 
   const countResultPromise = db.execute({
     sql: `SELECT COUNT(*) as total FROM promos ${where}`,
@@ -129,6 +176,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       promos: sortedPromos,
       total,
+      productTotal,
       page,
       pages: Math.ceil(total / PAGE_SIZE),
     });
@@ -149,6 +197,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     promos: await enrichPromos(promos),
     total,
+    productTotal,
     page,
     pages: Math.ceil(total / PAGE_SIZE),
   });

@@ -12,6 +12,7 @@ const PAGE_SIZE = 20;
 interface ProductsResponse {
   products: Product[];
   total: number;
+  promoTotal: number | null;
   page: number;
   pages: number;
 }
@@ -19,8 +20,19 @@ interface ProductsResponse {
 interface PromosResponse {
   promos: Promo[];
   total: number;
+  productTotal: number | null;
   page: number;
   pages: number;
+}
+
+interface CategoriesResponse {
+  categories: CategoryOption[];
+}
+
+interface CategoryOption {
+  name: string;
+  total: number;
+  promoTotal: number;
 }
 
 interface Props {
@@ -32,6 +44,9 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   const [tab, setTab] = useState<Tab>("prices");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [sortCol, setSortCol] = useState<SortCol>("item_name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [promoSort, setPromoSort] = useState<PromoSort>("latest");
@@ -56,7 +71,18 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   }, [search]);
 
   // Reset page on search/sort change
-  useEffect(() => { setPage(1); }, [debouncedSearch, sortCol, sortDir, promoSort, tab]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, category, sortCol, sortDir, promoSort, tab]);
+
+  useEffect(() => {
+    async function fetchCategories() {
+      const res = await fetch("/api/categories");
+      const data: CategoriesResponse = await res.json();
+      setCategories(data.categories);
+    }
+    fetchCategories()
+      .catch(() => setCategories([]))
+      .finally(() => setCategoriesLoading(false));
+  }, []);
 
   // Fetch products
   const fetchProducts = useCallback(async () => {
@@ -64,6 +90,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
     try {
       const params = new URLSearchParams({
         q: debouncedSearch,
+        category,
         page: String(page),
         sort: sortCol,
         dir: sortDir,
@@ -72,11 +99,13 @@ export default function PriceTable({ productCount, promoCount }: Props) {
       const data: ProductsResponse = await res.json();
       setProducts(data.products);
       setTotal(data.total);
+      if (data.promoTotal !== null) setPromoTotal(data.promoTotal);
+      else setPromoTotal(promoCount);
       setPages(data.pages);
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, page, sortCol, sortDir]);
+  }, [debouncedSearch, category, page, sortCol, sortDir, promoCount]);
 
   // Fetch promos
   const fetchPromos = useCallback(async () => {
@@ -84,6 +113,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
     try {
       const params = new URLSearchParams({
         q: debouncedSearch,
+        category,
         page: String(page),
         sort: promoSort,
       });
@@ -91,12 +121,14 @@ export default function PriceTable({ productCount, promoCount }: Props) {
       const data: PromosResponse = await res.json();
       setPromos(data.promos);
       setPromoTotal(data.total);
+      if (data.productTotal !== null) setTotal(data.productTotal);
+      else setTotal(productCount);
       setPromoPages(data.pages);
     } finally {
       setLoading(false);
       setPromoSortPending(false);
     }
-  }, [debouncedSearch, page, promoSort]);
+  }, [debouncedSearch, category, page, promoSort, productCount]);
 
   useEffect(() => {
     if (tab === "prices") fetchProducts();
@@ -114,6 +146,15 @@ export default function PriceTable({ productCount, promoCount }: Props) {
     setPromoSortPending(true);
     setPromoSort(sort => sort === "biggest_discount" ? "latest" : "biggest_discount");
   }
+
+  function clearFilters() {
+    setSearch("");
+    setDebouncedSearch("");
+    setCategory("");
+    setPromoSort("latest");
+  }
+
+  const hasActiveFilters = search || debouncedSearch || category || promoSort !== "latest";
 
   const sortIcon = (col: SortCol) =>
     sortCol !== col ? " ⇅" : sortDir === "asc" ? " ↑" : " ↓";
@@ -134,63 +175,94 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   };
 
   return (
-    <div>
+    <div className="mx-auto max-w-7xl px-4 pb-10 sm:px-6 lg:px-8">
       {/* Controls */}
-      <div className="bg-white border-b border-gray-200 px-4 sm:px-8 py-3 flex gap-3 items-center flex-wrap sticky top-0 z-10 shadow-sm">
-        <div className="flex gap-1">
-          <TabBtn active={tab === "prices"} onClick={() => setTab("prices")}>
-            מחירים ({total.toLocaleString()})
-          </TabBtn>
-          <TabBtn active={tab === "promos"} onClick={() => setTab("promos")}>
-            מבצעים ({promoTotal.toLocaleString()})
-          </TabBtn>
-        </div>
-        {tab === "promos" && (
-          <button
-            onClick={handlePromoSortToggle}
-            disabled={promoSortPending}
-            aria-busy={promoSortPending}
-            className={`min-w-[132px] h-10 px-4 rounded-lg font-semibold text-sm border-2 transition-all whitespace-nowrap ${
-              promoSort === "biggest_discount"
-                ? "border-[#1a1a2e] bg-[#1a1a2e] text-white"
-                : "border-gray-300 text-[#1a1a2e] bg-white hover:bg-gray-50"
-            } ${promoSortPending ? "opacity-70 cursor-wait" : ""}`}
-          >
-            ההנחה הכי גדולה
-          </button>
-        )}
-        <div className="relative flex-1 min-w-[160px]">
-          <input
-            type="text"
-            placeholder="חיפוש..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full px-4 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:border-[#e31837] focus:ring-2 focus:ring-[#e31837]/20"
-            dir="rtl"
-          />
-          {search && (
+      <div className="sticky top-0 z-10 bg-[#f7f8fa]/95 py-3 backdrop-blur">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-1">
+            <TabBtn active={tab === "prices"} onClick={() => setTab("prices")}>
+              מחירים ({total.toLocaleString()})
+            </TabBtn>
+            <TabBtn active={tab === "promos"} onClick={() => setTab("promos")}>
+              מבצעים ({promoTotal.toLocaleString()})
+            </TabBtn>
+          </div>
+          {tab === "promos" && (
             <button
-              onClick={() => setSearch("")}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none"
-            >×</button>
+              onClick={handlePromoSortToggle}
+              disabled={promoSortPending}
+              aria-busy={promoSortPending}
+              className={`h-10 min-w-[132px] rounded-lg border px-4 text-sm font-bold transition-all whitespace-nowrap ${
+                promoSort === "biggest_discount"
+                  ? "border-[#171717] bg-[#171717] text-white shadow-sm"
+                  : "border-gray-300 bg-white text-[#171717] hover:border-gray-400 hover:bg-gray-50"
+              } ${promoSortPending ? "opacity-70 cursor-wait" : ""}`}
+            >
+              ההנחה הכי גדולה
+            </button>
+          )}
+          <select
+            value={category}
+            onChange={event => setCategory(event.target.value)}
+            disabled={categoriesLoading}
+            className={`h-10 w-56 rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold text-[#171717] focus:border-[#e31837] focus:outline-none focus:ring-2 focus:ring-[#e31837]/15 ${categoriesLoading ? "cursor-wait opacity-55" : ""}`}
+          >
+            <option value="">{categoriesLoading ? "טוען קטגוריות..." : "כל הקטגוריות"}</option>
+            {categories.map(option => (
+              <option key={option.name} value={option.name}>
+                {option.name} ({(tab === "promos" ? option.promoTotal : option.total).toLocaleString()})
+              </option>
+            ))}
+          </select>
+          <div className="relative flex-1 min-w-[160px]">
+            <input
+              type="text"
+              placeholder="חיפוש..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="h-10 w-full rounded-lg border border-gray-300 bg-[#f7f8fa] px-4 text-sm transition-colors focus:border-[#e31837] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#e31837]/15"
+              dir="rtl"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none"
+              >×</button>
+            )}
+          </div>
+          {hasActiveFilters && (
+            <button
+              onClick={clearFilters}
+              className="h-10 rounded-lg border border-gray-300 bg-white px-4 text-sm font-bold text-gray-600 transition-colors hover:border-[#e31837] hover:text-[#e31837]"
+            >
+              נקה סינון
+            </button>
           )}
         </div>
       </div>
 
-      <div className="relative p-3 sm:p-6">
+      <div className="relative py-4 sm:py-6">
         {loading && <LoadingSpinner />}
         {tab === "prices" && (
           <>
             <p className="text-xs text-gray-500 mb-2 px-1">
               מציג {((page - 1) * PAGE_SIZE + 1).toLocaleString()}–{Math.min(page * PAGE_SIZE, total).toLocaleString()} מתוך {total.toLocaleString()} מוצרים
-              {debouncedSearch && " (סינון פעיל)"}
+              {(debouncedSearch || category) && " (סינון פעיל)"}
             </p>
             {/* Desktop table */}
-            <div className="hidden sm:block bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="hidden overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm sm:block">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full table-fixed text-sm">
+                  <colgroup>
+                    <col className="w-[34%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[16%]" />
+                  </colgroup>
                   <thead>
-                    <tr style={{ background: "#1a1a2e", color: "white" }}>
+                    <tr className="bg-[#171717] text-white">
                       <Th onClick={() => handleSort("item_name")}>שם מוצר{sortIcon("item_name")}</Th>
                       <Th onClick={() => handleSort("item_code")}>ברקוד{sortIcon("item_code")}</Th>
                       <Th onClick={() => handleSort("item_price")}>מחיר{sortIcon("item_price")}</Th>
@@ -208,14 +280,17 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                       <tr
                         key={p.item_code + i}
                         onClick={hasDiscount ? () => setSelectedProduct(p) : undefined}
-                        className={`border-b border-gray-100 hover:bg-red-50 transition-colors ${hasDiscount ? "cursor-pointer" : ""} ${i % 2 === 1 ? "bg-gray-50" : ""}`}
+                        className={`border-b border-gray-100 transition-colors hover:bg-red-50/70 ${hasDiscount ? "cursor-pointer" : ""} ${i % 2 === 1 ? "bg-[#fafafa]" : "bg-white"}`}
                       >
-                        <td className="px-4 py-3">{p.item_name}</td>
-                        <td className="px-4 py-3 text-right text-gray-400 text-xs font-mono" dir="ltr">{p.item_code}</td>
+                        <td className="px-4 py-3">
+                          <p className="truncate">{p.item_name}</p>
+                          {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-400 text-xs font-mono truncate" dir="ltr">{p.item_code}</td>
                         <td className="px-4 py-3 font-bold text-green-700 whitespace-nowrap">₪{Number(p.item_price).toFixed(2)}</td>
                         <td className="px-4 py-3">
                           {p.unit_of_measure && (
-                            <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200">{p.unit_of_measure}</span>
+                            <span className="inline-block rounded-lg border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">{p.unit_of_measure}</span>
                           )}
                         </td>
                         <td className="px-4 py-3">
@@ -225,13 +300,13 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                                 event.stopPropagation();
                                 setSelectedProduct(p);
                               }}
-                              className="px-3 py-1 rounded-lg text-xs font-semibold bg-[#e31837] text-white hover:bg-[#c91530] transition-colors whitespace-nowrap"
+                              className="rounded-lg bg-[#e31837] px-3 py-1 text-xs font-bold text-white transition-colors hover:bg-[#c91530] whitespace-nowrap"
                             >
                               מבצע
                             </button>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{p.manufacturer_name}</td>
+                        <td className="px-4 py-3 text-gray-500 text-xs truncate">{p.manufacturer_name}</td>
                       </tr>
                       );
                     })}
@@ -251,16 +326,17 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                 <div
                   key={p.item_code + i}
                   onClick={hasDiscount ? () => setSelectedProduct(p) : undefined}
-                  className={`bg-white rounded-xl p-4 shadow-sm flex items-center justify-between gap-3 ${hasDiscount ? "cursor-pointer" : ""}`}
+                  className={`flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-colors ${hasDiscount ? "cursor-pointer hover:bg-red-50/70" : ""}`}
                 >
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-sm leading-snug truncate">{p.item_name}</p>
+                    {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
                     <p className="text-xs text-gray-400 mt-0.5">
                       {p.manufacturer_name && <span>{p.manufacturer_name} · </span>}
                       <span dir="ltr" className="font-mono">{p.item_code}</span>
                     </p>
                     {p.unit_of_measure && (
-                      <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200">{p.unit_of_measure}</span>
+                      <span className="mt-1 inline-block rounded-lg border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">{p.unit_of_measure}</span>
                     )}
                     {hasDiscount && (
                       <button
@@ -268,7 +344,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                           event.stopPropagation();
                           setSelectedProduct(p);
                         }}
-                        className="mt-2 block px-3 py-1 rounded-lg text-xs font-semibold bg-[#e31837] text-white"
+                        className="mt-2 block rounded-lg bg-[#e31837] px-3 py-1 text-xs font-bold text-white"
                       >
                         מבצע
                       </button>
@@ -289,7 +365,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
           <>
             <p className="text-xs text-gray-500 mb-2 px-1">
               מציג {((page - 1) * PAGE_SIZE + 1).toLocaleString()}–{Math.min(page * PAGE_SIZE, promoTotal).toLocaleString()} מתוך {promoTotal.toLocaleString()} מבצעים
-              {debouncedSearch && " (סינון פעיל)"}
+              {(debouncedSearch || category) && " (סינון פעיל)"}
             </p>
             <div className="space-y-3">
               {promos.length === 0 && !loading ? (
@@ -301,10 +377,10 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                   <button
                     key={promo.promotion_id}
                     onClick={() => setSelectedPromo(promo)}
-                    className="block w-full bg-white rounded-xl p-4 shadow-sm border-r-4 text-right hover:bg-red-50 transition-colors"
+                    className="block w-full rounded-lg border border-gray-200 border-r-4 bg-white p-4 text-right shadow-sm transition-colors hover:bg-red-50/70"
                     style={{ borderRightColor: "#e31837" }}
                   >
-                    <p className="font-semibold text-[#1a1a2e] leading-snug">
+                    <p className="font-bold leading-snug text-[#171717]">
                       {promo.description || `מבצע #${promo.promotion_id}`}
                     </p>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mt-2">
@@ -345,8 +421,8 @@ function TabBtn({ children, active, onClick }: { children: React.ReactNode; acti
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2 rounded-lg font-semibold text-sm border-2 transition-all whitespace-nowrap ${
-        active ? "border-[#e31837] bg-[#e31837] text-white" : "border-[#e31837] text-[#e31837] bg-white hover:bg-[#e31837] hover:text-white"
+      className={`h-10 rounded-lg border px-4 text-sm font-bold transition-all whitespace-nowrap ${
+        active ? "border-[#e31837] bg-[#e31837] text-white shadow-sm" : "border-red-200 bg-white text-[#e31837] hover:border-[#e31837] hover:bg-red-50"
       }`}
     >
       {children}
@@ -375,12 +451,12 @@ function DiscountModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+        className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-lg border border-gray-200 bg-white p-5 shadow-2xl"
         onClick={event => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-bold text-[#1a1a2e]">{product.item_name}</h2>
+            <h2 className="text-lg font-black text-[#171717]">{product.item_name}</h2>
             <p className="mt-1 text-sm text-gray-500">
               מחיר רגיל: <strong className="text-green-700">{formatCurrency(product.item_price)}</strong>
             </p>
@@ -403,16 +479,16 @@ function DiscountModal({
             const sharedItems = (promo.original_items ?? []).filter(item => item.item_code !== product.item_code);
 
             return (
-              <div key={promo.promotion_id} className="rounded-lg border border-gray-200 p-3">
-                <p className="font-semibold text-[#1a1a2e]">
+              <div key={promo.promotion_id} className="rounded-lg border border-gray-200 bg-[#fafafa] p-3">
+                <p className="font-bold text-[#171717]">
                   {promo.description || `מבצע #${promo.promotion_id}`}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                   {promo.discount_rate && <span>הנחה: <strong className="text-[#e31837]">₪{promo.discount_rate}</strong></span>}
                   {promo.discounted_price && <span>מחיר מבצע: <strong className="text-green-700">{formatCurrency(promo.discounted_price)}</strong></span>}
                   {promo.min_qty && <span>מינ׳: {promo.min_qty}</span>}
-                  <span>מקורי ליחידה: <strong className="text-[#1a1a2e]">{formatCurrency(product.item_price)}</strong></span>
-                  {originalMinPrice && <span>מקורי למינ׳: <strong className="text-[#1a1a2e]">{formatCurrency(originalMinPrice)}</strong></span>}
+                  <span>מקורי ליחידה: <strong className="text-[#171717]">{formatCurrency(product.item_price)}</strong></span>
+                  {originalMinPrice && <span>מקורי למינ׳: <strong className="text-[#171717]">{formatCurrency(originalMinPrice)}</strong></span>}
                   {savings && savings > 0 && <span>חיסכון: <strong className="text-[#e31837]">{formatCurrency(savings)}</strong></span>}
                   {promo.end_date && <span className="text-xs text-gray-400">עד {String(promo.end_date).slice(0, 10)}</span>}
                 </div>
@@ -423,7 +499,7 @@ function DiscountModal({
                       {sharedItems.map(item => (
                         <div key={item.item_code} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm text-gray-600">
                           <span className="min-w-0 flex-1 truncate">{item.item_name || item.item_code}</span>
-                          <span>מחיר רגיל: <strong className="text-[#1a1a2e]">{formatCurrency(item.item_price)}</strong></span>
+                          <span>מחיר רגיל: <strong className="text-[#171717]">{formatCurrency(item.item_price)}</strong></span>
                           <span className="text-xs text-gray-400">
                             ברקוד: <span dir="ltr" className="font-mono">{item.item_code}</span>
                           </span>
@@ -466,12 +542,12 @@ function PromoModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+        className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-lg border border-gray-200 bg-white p-5 shadow-2xl"
         onClick={event => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-bold text-[#1a1a2e]">
+            <h2 className="text-lg font-black text-[#171717]">
               {promo.description || `מבצע #${promo.promotion_id}`}
             </h2>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
@@ -493,17 +569,17 @@ function PromoModal({
         {originalItems.length > 0 && (
           <div className="mt-4 space-y-2">
             {originalItems.map(item => (
-              <div key={item.item_code} className="rounded-lg border border-gray-200 p-3">
+              <div key={item.item_code} className="rounded-lg border border-gray-200 bg-[#fafafa] p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <p className="font-semibold text-[#1a1a2e]">{item.item_name || item.item_code}</p>
+                  <p className="font-bold text-[#171717]">{item.item_name || item.item_code}</p>
                   <span className="text-xs text-gray-400">
                     ברקוד: <span dir="ltr" className="font-mono">{item.item_code}</span>
                   </span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
-                  <span>מקורי ליחידה: <strong className="text-[#1a1a2e]">{formatCurrency(item.item_price)}</strong></span>
+                  <span>מקורי ליחידה: <strong className="text-[#171717]">{formatCurrency(item.item_price)}</strong></span>
                   {minQty && (
-                    <span>מקורי למינ׳: <strong className="text-[#1a1a2e]">{formatCurrency(Number(item.item_price) * minQty)}</strong></span>
+                    <span>מקורי למינ׳: <strong className="text-[#171717]">{formatCurrency(Number(item.item_price) * minQty)}</strong></span>
                   )}
                 </div>
               </div>
@@ -523,9 +599,9 @@ function PromoModal({
 
 function LoadingSpinner() {
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-28 z-10 flex justify-center">
+    <div className="pointer-events-none fixed inset-x-0 top-1/2 z-20 flex -translate-y-1/2 justify-center">
       <div
-        className="h-10 w-10 rounded-full border-4 border-gray-200 border-t-[#e31837] animate-spin"
+        className="h-10 w-10 rounded-full border-4 border-white bg-white/80 border-t-[#e31837] shadow-md animate-spin"
         aria-label="טוען"
         role="status"
       />
@@ -535,7 +611,7 @@ function LoadingSpinner() {
 
 function Th({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
   return (
-    <th onClick={onClick} className={`px-4 py-3 text-right font-semibold whitespace-nowrap select-none ${onClick ? "cursor-pointer hover:bg-[#2d2d4e]" : ""}`}>
+    <th onClick={onClick} className={`px-4 py-3 text-right text-xs font-bold uppercase whitespace-nowrap select-none ${onClick ? "cursor-pointer hover:bg-white/10" : ""}`}>
       {children}
     </th>
   );
@@ -554,7 +630,7 @@ function Pagination({ page, pages, onPage }: { page: number; pages: number; onPa
   if (pages > 1) range.push(pages);
 
   return (
-    <div className="flex items-center justify-center gap-1 p-4 flex-wrap">
+    <div className="flex flex-wrap items-center justify-center gap-1 p-4">
       <PgBtn disabled={page === 1} onClick={() => onPage(page - 1)}>‹</PgBtn>
       {range.map((item, i) =>
         item === "..." ? <span key={`e${i}`} className="px-1 text-gray-400">…</span> : (

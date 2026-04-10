@@ -1,14 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f0f2f5;
-  --foreground: #1a1a2e;
+  --background: #f7f8fa;
+  --foreground: #171717;
   --victory-red: #e31837;
+  --muted: #667085;
+  --line: #e5e7eb;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+  font-family: Arial, "Segoe UI", sans-serif;
   direction: rtl;
+}
+
+::selection {
+  background: rgba(227, 24, 55, 0.18);
+}
+
+button,
+input {
+  font: inherit;
 }

@@ -43,6 +43,7 @@ pip install -r requirements.txt
 
 cp .env.example .env
 # Edit .env — add TURSO_DB_URL and TURSO_AUTH_TOKEN
+# Optional: add GEMINI_API_KEY to categorize products during scans
 
 # First run — discovers branch ID
 python scanner.py
@@ -78,10 +79,26 @@ Add these env vars in the Vercel dashboard (Settings → Environment Variables):
 - `TURSO_AUTH_TOKEN`
 - `GANEI_TIKVA_BRANCH_ID`
 
+## AI product categories
+
+Set `GEMINI_API_KEY` in `worker/.env` to let the scanner categorize products. The scanner stores results in `worker/category_cache.json`, so existing products are not re-sent to Gemini on every scan.
+
+```bash
+GEMINI_API_KEY=your-gemini-key
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+For an existing database created before categories, run this once:
+
+```sql
+ALTER TABLE products ADD COLUMN category TEXT;
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+```
+
 ## Table schema
 
 | Table | Primary key | Notes |
 |-------|-------------|-------|
 | `branches` | `branch_id` | Store metadata |
-| `products` | `item_code, branch_id` | All prices |
+| `products` | `item_code, branch_id` | All prices, optional AI `category` |
 | `promos` | `promotion_id, branch_id` | Active promotions, `item_codes` is a JSON array stored as text |

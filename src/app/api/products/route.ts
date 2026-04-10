@@ -9,6 +9,7 @@ interface PriceRow {
   item_code: string;
   item_name: string;
   item_price: number;
+  category: string;
 }
 
 function parseItemCodes(raw: unknown): string[] {
@@ -24,6 +25,7 @@ function parseItemCodes(raw: unknown): string[] {
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const q = searchParams.get("q")?.trim() || "";
+  const category = searchParams.get("category")?.trim() || "";
   const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
   const sort = searchParams.get("sort") || "item_name";
   const dir = searchParams.get("dir") === "desc" ? "DESC" : "ASC";
@@ -40,12 +42,16 @@ export async function GET(req: NextRequest) {
     conditions.push("(item_name LIKE ? OR item_code LIKE ? OR manufacturer_name LIKE ?)");
     args.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
+  if (category) {
+    conditions.push("category = ?");
+    args.push(category);
+  }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const [dataResult, countResult] = await Promise.all([
     db.execute({
-      sql: `SELECT item_code,item_name,item_price,unit_of_measure,quantity,manufacturer_name,branch_id,last_updated
+      sql: `SELECT item_code,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,branch_id,last_updated
             FROM products ${where} ORDER BY ${sortCol} ${dir} LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
       args,
     }),
@@ -59,6 +65,7 @@ export async function GET(req: NextRequest) {
   const products = dataResult.rows.map(r => ({ ...r })) as unknown as Product[];
   const productCodes = products.map(product => product.item_code).filter(Boolean);
   const promosByCode = new Map<string, Promo[]>();
+  let filteredPromoTotal: number | null = null;
 
   if (productCodes.length > 0) {
     const itemCodeConditions = productCodes.map(() => "item_codes LIKE ?");
@@ -91,7 +98,7 @@ export async function GET(req: NextRequest) {
       }
 
       const sharedProductsResult = await db.execute({
-        sql: `SELECT item_code,item_name,item_price FROM products WHERE ${productConditions.join(" AND ")}`,
+        sql: `SELECT item_code,item_name,item_price,category FROM products WHERE ${productConditions.join(" AND ")}`,
         args: productArgs,
       });
 
@@ -115,12 +122,50 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  if (q || category) {
+    const promoConditions: string[] = [];
+    const promoArgs: string[] = [];
+    if (BRANCH) { promoConditions.push("branch_id = ?"); promoArgs.push(BRANCH); }
+    if (q) {
+      promoConditions.push("(description LIKE ? OR promotion_id LIKE ?)");
+      promoArgs.push(`%${q}%`, `%${q}%`);
+    }
+    const promoWhere = promoConditions.length ? `WHERE ${promoConditions.join(" AND ")}` : "";
+
+    if (!category) {
+      const promoCountResult = await db.execute({
+        sql: `SELECT COUNT(*) as total FROM promos ${promoWhere}`,
+        args: promoArgs,
+      });
+      filteredPromoTotal = Number(promoCountResult.rows[0]?.total ?? 0);
+    } else {
+      const filteredProductResult = await db.execute({
+        sql: `SELECT item_code FROM products ${where}`,
+        args,
+      });
+      const filteredCodes = new Set(filteredProductResult.rows.map(row => String(row.item_code)).filter(Boolean));
+
+      if (filteredCodes.size === 0) {
+        filteredPromoTotal = 0;
+      } else {
+        const promoResult = await db.execute({
+          sql: `SELECT item_codes FROM promos ${promoWhere}`,
+          args: promoArgs,
+        });
+        filteredPromoTotal = promoResult.rows.filter(row =>
+          parseItemCodes(row.item_codes).some(code => filteredCodes.has(code))
+        ).length;
+      }
+    }
+  }
+
   return NextResponse.json({
     products: products.map(product => ({
       ...product,
       discount_promos: promosByCode.get(product.item_code) ?? [],
     })),
     total,
+    promoTotal: filteredPromoTotal,
     page,
     pages: Math.ceil(total / PAGE_SIZE),
   });

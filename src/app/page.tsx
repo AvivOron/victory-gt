@@ -38,8 +38,8 @@ export default async function HomePage() {
   const [stats, branch] = await Promise.all([getStats(), getBranch()]);
 
   return (
-    <div className="min-h-screen" style={{ background: "#f0f2f5" }}>
-      <Header branch={branch} lastUpdated={stats.lastUpdated} productCount={stats.productCount} promoCount={stats.promoCount} />
+    <div className="min-h-screen bg-[#f7f8fa]">
+      <Header branch={branch} lastUpdated={stats.lastUpdated} />
       <PriceTable productCount={stats.productCount} promoCount={stats.promoCount} />
     </div>
   );
