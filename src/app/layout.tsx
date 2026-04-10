@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Providers from "@/components/Providers";
 
 const BASE_URL = "https://avivo.dev/victory-gt";
 const OG_IMAGE = "https://avivo.dev/victory-gt/api/og";
@@ -48,7 +49,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="he" dir="rtl">
-      <body className="min-h-screen">{children}</body>
+      <body className="min-h-screen">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

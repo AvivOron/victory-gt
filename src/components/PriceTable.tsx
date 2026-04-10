@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useTransition } from "react";
 import type { Product, Promo } from "@/lib/db";
+import { signIn, useSession } from "next-auth/react";
 
-type Tab = "prices" | "promos";
+type Tab = "prices" | "promos" | "favourites";
 type SortCol = "item_name" | "item_price" | "manufacturer_name" | "item_code";
 type SortDir = "asc" | "desc";
 const PAGE_SIZE = 20;
@@ -28,6 +29,10 @@ interface CategoriesResponse {
   categories: CategoryOption[];
 }
 
+interface FavouritesResponse {
+  favourites: string[];
+}
+
 interface CategoryOption {
   name: string;
   total: number;
@@ -39,6 +44,7 @@ interface Props {
 }
 
 export default function PriceTable({ productCount, promoCount }: Props) {
+  const { status } = useSession();
   const [tab, setTab] = useState<Tab>("prices");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -58,6 +64,8 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   const [promoTotal, setPromoTotal] = useState(promoCount);
   const [promoPages, setPromoPages] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [favouriteCodes, setFavouriteCodes] = useState<Set<string>>(new Set());
+  const [favouritePendingCode, setFavouritePendingCode] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   // Debounce search
@@ -80,6 +88,26 @@ export default function PriceTable({ productCount, promoCount }: Props) {
       .finally(() => setCategoriesLoading(false));
   }, []);
 
+  const fetchFavourites = useCallback(async () => {
+    if (status !== "authenticated") {
+      setFavouriteCodes(new Set());
+      return;
+    }
+
+    try {
+      const res = await fetch("/victory-gt/api/favourites", { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to load favourites");
+      const data: FavouritesResponse = await res.json();
+      setFavouriteCodes(new Set(data.favourites));
+    } catch {
+      setFavouriteCodes(new Set());
+    }
+  }, [status]);
+
+  useEffect(() => {
+    fetchFavourites();
+  }, [fetchFavourites]);
+
   // Fetch products
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -91,6 +119,11 @@ export default function PriceTable({ productCount, promoCount }: Props) {
         sort: sortCol,
         dir: sortDir,
       });
+      if (tab === "favourites") {
+        for (const code of favouriteCodes) {
+          params.append("itemCode", code);
+        }
+      }
       const res = await fetch(`/victory-gt/api/products?${params}`);
       const data: ProductsResponse = await res.json();
       setProducts(data.products);
@@ -101,7 +134,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, category, page, sortCol, sortDir, promoCount]);
+  }, [debouncedSearch, category, page, sortCol, sortDir, promoCount, tab, favouriteCodes]);
 
   // Fetch promos
   const fetchPromos = useCallback(async () => {
@@ -121,7 +154,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   }, [debouncedSearch, category, page, productCount]);
 
   useEffect(() => {
-    if (tab === "prices") fetchProducts();
+    if (tab === "prices" || tab === "favourites") fetchProducts();
     else fetchPromos();
   }, [tab, fetchProducts, fetchPromos]);
 
@@ -158,6 +191,44 @@ export default function PriceTable({ productCount, promoCount }: Props) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   };
 
+  const promptGoogleSignIn = useCallback(() => {
+    void signIn("google", {
+      callbackUrl: typeof window === "undefined" ? "/victory-gt/prices" : window.location.href,
+    });
+  }, []);
+
+  const toggleFavourite = useCallback(async (itemCode: string) => {
+    if (status !== "authenticated") {
+      promptGoogleSignIn();
+      return;
+    }
+
+    const isFavourite = favouriteCodes.has(itemCode);
+    setFavouritePendingCode(itemCode);
+    try {
+      const res = await fetch("/victory-gt/api/favourites", {
+        method: isFavourite ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemCode }),
+      });
+
+      if (res.status === 401) {
+        promptGoogleSignIn();
+        return;
+      }
+      if (!res.ok) throw new Error("Failed to update favourite");
+
+      setFavouriteCodes(current => {
+        const next = new Set(current);
+        if (isFavourite) next.delete(itemCode);
+        else next.add(itemCode);
+        return next;
+      });
+    } finally {
+      setFavouritePendingCode(null);
+    }
+  }, [favouriteCodes, promptGoogleSignIn, status]);
+
   return (
     <div className="mx-auto max-w-7xl px-4 pb-10 sm:px-6 lg:px-8">
       {/* Controls */}
@@ -169,6 +240,9 @@ export default function PriceTable({ productCount, promoCount }: Props) {
             </TabBtn>
             <TabBtn active={tab === "promos"} onClick={() => setTab("promos")}>
               מבצעים ({promoTotal.toLocaleString()})
+            </TabBtn>
+            <TabBtn active={tab === "favourites"} onClick={() => setTab("favourites")}>
+              מועדפים ({favouriteCodes.size.toLocaleString()})
             </TabBtn>
           </div>
           <select
@@ -213,10 +287,22 @@ export default function PriceTable({ productCount, promoCount }: Props) {
 
       <div className="relative py-4 sm:py-6">
         {loading && <LoadingSpinner />}
-        {tab === "prices" && (
+        {(tab === "prices" || tab === "favourites") && (
           <>
+            {tab === "favourites" && status !== "authenticated" ? (
+              <div className="rounded-lg border border-gray-200 bg-white px-5 py-10 text-center text-gray-500 shadow-sm">
+                <p className="text-lg font-semibold text-[#171717]">כדי לראות מועדפים צריך להתחבר</p>
+                <button
+                  onClick={promptGoogleSignIn}
+                  className="mt-4 h-10 rounded-lg bg-[#171717] px-4 text-sm font-bold text-white transition-colors hover:bg-[#2a2a2a]"
+                >
+                  התחברות עם Google
+                </button>
+              </div>
+            ) : (
+              <>
             <p className="text-xs text-gray-500 mb-2 px-1">
-              מציג {((page - 1) * PAGE_SIZE + 1).toLocaleString()}–{Math.min(page * PAGE_SIZE, total).toLocaleString()} מתוך {total.toLocaleString()} מוצרים
+              מציג {((page - 1) * PAGE_SIZE + 1).toLocaleString()}–{Math.min(page * PAGE_SIZE, total).toLocaleString()} מתוך {total.toLocaleString()} {tab === "favourites" ? "מועדפים" : "מוצרים"}
               {(debouncedSearch || category) && " (סינון פעיל)"}
             </p>
             {/* Desktop table */}
@@ -253,8 +339,29 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                         className={`border-b border-gray-100 transition-colors hover:bg-red-50/70 ${hasDiscount ? "cursor-pointer" : ""} ${i % 2 === 1 ? "bg-[#fafafa]" : "bg-white"}`}
                       >
                         <td className="px-4 py-3">
-                          <p className="truncate">{p.item_name}</p>
-                          {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
+                          <div className="flex items-start gap-2">
+                            <button
+                              type="button"
+                              onClick={event => {
+                                event.stopPropagation();
+                                void toggleFavourite(p.item_code);
+                              }}
+                              disabled={favouritePendingCode === p.item_code}
+                              className={`mt-0.5 h-8 w-8 flex-shrink-0 rounded-lg border text-sm transition-colors ${
+                                favouriteCodes.has(p.item_code)
+                                  ? "border-[#e31837] bg-red-50 text-[#e31837]"
+                                  : "border-gray-200 bg-white text-gray-400 hover:border-[#e31837] hover:text-[#e31837]"
+                              } ${favouritePendingCode === p.item_code ? "cursor-wait opacity-60" : ""}`}
+                              aria-label={favouriteCodes.has(p.item_code) ? "הסרה ממועדפים" : "שמירה במועדפים"}
+                              title={status === "authenticated" ? "שמירה במועדפים" : "נדרשת התחברות עם Google"}
+                            >
+                              ★
+                            </button>
+                            <div className="min-w-0">
+                              <p className="truncate">{p.item_name}</p>
+                              {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
+                            </div>
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-400 text-xs font-mono truncate" dir="ltr">{p.item_code}</td>
                         <td className="px-4 py-3 font-bold text-green-700 whitespace-nowrap">₪{Number(p.item_price).toFixed(2)}</td>
@@ -299,8 +406,29 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                   className={`flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-colors ${hasDiscount ? "cursor-pointer hover:bg-red-50/70" : ""}`}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-sm leading-snug truncate">{p.item_name}</p>
-                    {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
+                    <div className="flex items-start gap-2">
+                      <button
+                        type="button"
+                        onClick={event => {
+                          event.stopPropagation();
+                          void toggleFavourite(p.item_code);
+                        }}
+                        disabled={favouritePendingCode === p.item_code}
+                        className={`mt-0.5 h-8 w-8 flex-shrink-0 rounded-lg border text-sm transition-colors ${
+                          favouriteCodes.has(p.item_code)
+                            ? "border-[#e31837] bg-red-50 text-[#e31837]"
+                            : "border-gray-200 bg-white text-gray-400 hover:border-[#e31837] hover:text-[#e31837]"
+                        } ${favouritePendingCode === p.item_code ? "cursor-wait opacity-60" : ""}`}
+                        aria-label={favouriteCodes.has(p.item_code) ? "הסרה ממועדפים" : "שמירה במועדפים"}
+                        title={status === "authenticated" ? "שמירה במועדפים" : "נדרשת התחברות עם Google"}
+                      >
+                        ★
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-sm leading-snug truncate">{p.item_name}</p>
+                        {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
+                      </div>
+                    </div>
                     <p className="text-xs text-gray-400 mt-0.5">
                       {p.manufacturer_name && <span>{p.manufacturer_name} · </span>}
                       <span dir="ltr" className="font-mono">{p.item_code}</span>
@@ -332,6 +460,8 @@ export default function PriceTable({ productCount, promoCount }: Props) {
               })}
               <Pagination page={page} pages={pages} onPage={setPage} />
             </div>
+              </>
+            )}
           </>
         )}
 

@@ -68,16 +68,27 @@ python scanner.py --watch
 
 ```bash
 cp .env.local.example .env.local
-# Fill in TURSO_DB_URL, TURSO_AUTH_TOKEN, GANEI_TIKVA_BRANCH_ID
+# Fill in DATABASE_URL, GANEI_TIKVA_BRANCH_ID, NEXTAUTH_SECRET,
+# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and NEXTAUTH_URL
 
 npm run dev        # local dev
 vercel deploy      # deploy to Vercel
 ```
 
 Add these env vars in the Vercel dashboard (Settings → Environment Variables):
-- `TURSO_DB_URL`
-- `TURSO_AUTH_TOKEN`
+- `DATABASE_URL`
 - `GANEI_TIKVA_BRANCH_ID`
+- `NEXTAUTH_SECRET`
+- `NEXTAUTH_URL`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+
+For Google OAuth, add an authorized redirect URI for each environment:
+
+- Local: `http://localhost:3000/victory-gt/api/auth/callback/google`
+- Production: `https://your-domain.example/victory-gt/api/auth/callback/google`
+
+`NEXTAUTH_URL` must match the exact origin and base path you are using. If local dev starts on a different port, update it accordingly, for example `http://localhost:3001/victory-gt`.
 
 ## AI product categories
 
@@ -102,3 +113,4 @@ CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 | `branches` | `branch_id` | Store metadata |
 | `products` | `item_code, branch_id` | All prices, optional AI `category` |
 | `promos` | `promotion_id, branch_id` | Active promotions, `item_codes` is a JSON array stored as text |
+| `favourites` | `user_id, item_code, branch_id` | Google-authenticated saved products |

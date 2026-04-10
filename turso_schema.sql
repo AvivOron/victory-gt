@@ -39,7 +39,17 @@ CREATE TABLE IF NOT EXISTS promos (
   PRIMARY KEY (promotion_id, branch_id)
 );
 
+CREATE TABLE IF NOT EXISTS favourites (
+  user_id    TEXT,
+  user_email TEXT,
+  item_code  TEXT,
+  branch_id  TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, item_code, branch_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_products_branch ON products(branch_id);
 CREATE INDEX IF NOT EXISTS idx_products_name   ON products(item_name);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_promos_branch   ON promos(branch_id);
+CREATE INDEX IF NOT EXISTS idx_favourites_user_branch ON favourites(user_id, branch_id, created_at);
