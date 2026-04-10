@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const q = searchParams.get("q")?.trim() || "";
   const category = searchParams.get("category")?.trim() || "";
+  const itemCodes = searchParams.getAll("itemCode").map(code => code.trim()).filter(Boolean);
   const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
   const sort = searchParams.get("sort") || "item_name";
   const dir = searchParams.get("dir") === "desc" ? "DESC" : "ASC";
@@ -45,6 +46,11 @@ export async function GET(req: NextRequest) {
   if (category) {
     conditions.push("category = ?");
     args.push(category);
+  }
+  if (itemCodes.length > 0) {
+    const placeholders = itemCodes.map(() => "?").join(",");
+    conditions.push(`item_code IN (${placeholders})`);
+    args.push(...itemCodes);
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";

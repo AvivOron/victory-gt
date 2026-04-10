@@ -2,6 +2,8 @@ import { db, type Branch } from "@/lib/db";
 import PriceTable from "@/components/PriceTable";
 import Header from "@/components/Header";
 import type { Metadata } from "next";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 export const revalidate = 10800;
 
@@ -41,11 +43,11 @@ async function getBranch(): Promise<Branch | null> {
 }
 
 export default async function PricesPage() {
-  const [stats, branch] = await Promise.all([getStats(), getBranch()]);
+  const [stats, branch, session] = await Promise.all([getStats(), getBranch(), getServerSession(authOptions)]);
 
   return (
     <div className="min-h-screen bg-[#f7f8fa]">
-      <Header branch={branch} lastUpdated={stats.lastUpdated} />
+      <Header branch={branch} lastUpdated={stats.lastUpdated} isAuthenticated={Boolean(session?.user)} />
       <PriceTable productCount={stats.productCount} promoCount={stats.promoCount} />
     </div>
   );

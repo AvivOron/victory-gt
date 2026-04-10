@@ -1,11 +1,14 @@
 import type { Branch } from "@/lib/db";
+import SignInButton from "@/components/SignInButton";
+import SignOutButton from "@/components/SignOutButton";
 
 interface Props {
   branch: Branch | null;
   lastUpdated: string | null;
+  isAuthenticated: boolean;
 }
 
-export default function Header({ branch, lastUpdated }: Props) {
+export default function Header({ branch, lastUpdated, isAuthenticated }: Props) {
   const city = branch?.city || "גני תקווה";
   const address = branch?.address || "רחוב הכרמל 20, גני תקווה";
 
@@ -41,6 +44,7 @@ export default function Header({ branch, lastUpdated }: Props) {
             <br />
             רשות ההגנה לצרכן
           </div>
+          {isAuthenticated ? <SignOutButton /> : <SignInButton />}
         </div>
       </div>
     </header>
