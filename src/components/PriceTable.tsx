@@ -389,7 +389,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                     </p>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mt-2">
                       {promo.discounted_price && <span>מחיר: <strong className="text-green-700">{formatCurrency(promo.discounted_price)}</strong></span>}
-                      {promo.min_qty && <span>מינ׳ כמות: {promo.min_qty}</span>}
+                      {(positiveNumber(promo.min_qty) ?? 0) > 1 && <span>מינ׳ כמות: {promo.min_qty}</span>}
                       {promo.max_qty && <span>מקס׳ כמות: {promo.max_qty}</span>}
                       {positiveNumber(promo.min_purchase_amount) && <span>מינ׳ קנייה: <strong className="text-gray-700">{formatCurrency(promo.min_purchase_amount)}</strong></span>}
                       {promo.end_date && <span className="text-xs text-gray-400">עד {String(promo.end_date).slice(0, 10)}</span>}
@@ -493,7 +493,7 @@ function DiscountModal({
                   {promo.discount_rate && <span>הנחה לפריט: <strong className="text-[#e31837]">₪{promo.discount_rate}</strong></span>}
                   {savings && savings > 0 && <span>חיסכון כולל: <strong className="text-[#e31837]">{formatCurrency(savings)}</strong></span>}
                   {promo.discounted_price && <span>מחיר מבצע: <strong className="text-green-700">{formatCurrency(promo.discounted_price)}</strong></span>}
-                  {promo.min_qty && <span>מינ׳ כמות: {promo.min_qty}</span>}
+                  {(positiveNumber(promo.min_qty) ?? 0) > 1 && <span>מינ׳ כמות: {promo.min_qty}</span>}
                   {promo.max_qty && <span>מקס׳ כמות: {promo.max_qty}</span>}
                   {positiveNumber(promo.min_purchase_amount) && <span>מינ׳ קנייה: <strong className="text-gray-700">{formatCurrency(promo.min_purchase_amount)}</strong></span>}
                   <span>מקורי ליחידה: <strong className="text-[#171717]">{formatCurrency(product.item_price)}</strong></span>
@@ -564,7 +564,7 @@ function PromoModal({
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
               {promo.discount_rate && <span>הנחה לפריט: <strong className="text-[#e31837]">₪{promo.discount_rate}</strong></span>}
               {promo.discounted_price && <span>מחיר מבצע: <strong className="text-green-700">{formatCurrency(promo.discounted_price)}</strong></span>}
-              {promo.min_qty && <span>מינ׳ כמות: {promo.min_qty}</span>}
+              {(positiveNumber(promo.min_qty) ?? 0) > 1 && <span>מינ׳ כמות: {promo.min_qty}</span>}
               {promo.max_qty && <span>מקס׳ כמות: {promo.max_qty}</span>}
               {positiveNumber(promo.min_purchase_amount) && <span>מינ׳ קנייה: <strong className="text-gray-700">{formatCurrency(promo.min_purchase_amount)}</strong></span>}
               {promo.end_date && <span className="text-xs text-gray-400">עד {String(promo.end_date).slice(0, 10)}</span>}
