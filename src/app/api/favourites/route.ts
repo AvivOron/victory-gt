@@ -72,10 +72,14 @@ export async function DELETE(request: Request) {
     return Response.json({ error: "itemCode is required" }, { status: 400 });
   }
 
-  await db.execute({
-    sql: "DELETE FROM favourites WHERE user_id = ? AND item_code = ? AND branch_id = ?",
-    args: [user.userId, itemCode, BRANCH],
+  const result = await db.execute({
+    sql: "DELETE FROM favourites WHERE user_id = ? AND item_code = ? RETURNING item_code, branch_id",
+    args: [user.userId, itemCode],
   });
 
-  return Response.json({ ok: true });
+  return Response.json({
+    ok: result.rows.length > 0,
+    deleted: result.rows.length,
+    branchIds: result.rows.map(row => String(row.branch_id ?? "")),
+  });
 }
