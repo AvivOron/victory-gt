@@ -335,19 +335,23 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                       {p.manufacturer_name && <span>{p.manufacturer_name} · </span>}
                       <span dir="ltr" className="font-mono">{p.item_code}</span>
                     </p>
-                    {p.unit_of_measure && (
-                      <span className="mt-1 inline-block rounded-lg border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">{p.unit_of_measure}</span>
-                    )}
-                    {hasDiscount && (
-                      <button
-                        onClick={event => {
-                          event.stopPropagation();
-                          setSelectedProduct(p);
-                        }}
-                        className="mt-2 block rounded-lg bg-[#e31837] px-3 py-1 text-xs font-bold text-white"
-                      >
-                        מבצע
-                      </button>
+                    {(p.unit_of_measure || hasDiscount) && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {p.unit_of_measure && (
+                          <span className="inline-block rounded-lg border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">{p.unit_of_measure}</span>
+                        )}
+                        {hasDiscount && (
+                          <button
+                            onClick={event => {
+                              event.stopPropagation();
+                              setSelectedProduct(p);
+                            }}
+                            className="rounded-lg bg-[#e31837] px-3 py-1 text-xs font-bold text-white"
+                          >
+                            מבצע
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                   <div className="text-xl font-bold text-green-700 whitespace-nowrap flex-shrink-0">
@@ -484,12 +488,12 @@ function DiscountModal({
                   {promo.description || `מבצע #${promo.promotion_id}`}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
-                  {promo.discount_rate && <span>הנחה: <strong className="text-[#e31837]">₪{promo.discount_rate}</strong></span>}
+                  {promo.discount_rate && <span>הנחה לפריט: <strong className="text-[#e31837]">₪{promo.discount_rate}</strong></span>}
+                  {savings && savings > 0 && <span>חיסכון כולל: <strong className="text-[#e31837]">{formatCurrency(savings)}</strong></span>}
                   {promo.discounted_price && <span>מחיר מבצע: <strong className="text-green-700">{formatCurrency(promo.discounted_price)}</strong></span>}
                   {promo.min_qty && <span>מינ׳: {promo.min_qty}</span>}
                   <span>מקורי ליחידה: <strong className="text-[#171717]">{formatCurrency(product.item_price)}</strong></span>
                   {originalMinPrice && <span>מקורי למינ׳: <strong className="text-[#171717]">{formatCurrency(originalMinPrice)}</strong></span>}
-                  {savings && savings > 0 && <span>חיסכון: <strong className="text-[#e31837]">{formatCurrency(savings)}</strong></span>}
                   {promo.end_date && <span className="text-xs text-gray-400">עד {String(promo.end_date).slice(0, 10)}</span>}
                 </div>
                 {sharedItems.length > 0 && (
@@ -497,12 +501,14 @@ function DiscountModal({
                     <p className="text-xs font-semibold text-gray-500">מוצרים נוספים במבצע</p>
                     <div className="mt-2 space-y-2">
                       {sharedItems.map(item => (
-                        <div key={item.item_code} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm text-gray-600">
-                          <span className="min-w-0 flex-1 truncate">{item.item_name || item.item_code}</span>
-                          <span>מחיר רגיל: <strong className="text-[#171717]">{formatCurrency(item.item_price)}</strong></span>
-                          <span className="text-xs text-gray-400">
+                        <div key={item.item_code} className="rounded-lg border border-gray-200 bg-white p-2 text-sm text-gray-600">
+                          <p className="font-semibold leading-snug text-[#171717]">{item.item_name || item.item_code}</p>
+                          <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                            <span>מחיר רגיל: <strong className="text-[#171717]">{formatCurrency(item.item_price)}</strong></span>
+                            <span className="text-xs text-gray-400">
                             ברקוד: <span dir="ltr" className="font-mono">{item.item_code}</span>
-                          </span>
+                            </span>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -532,6 +538,7 @@ function PromoModal({
 }) {
   const codes = itemCodes(promo.item_codes);
   const minQty = positiveNumber(promo.min_qty);
+  const discountedPrice = positiveNumber(promo.discounted_price);
   const originalItems = promo.original_items ?? [];
 
   return (
@@ -551,7 +558,7 @@ function PromoModal({
               {promo.description || `מבצע #${promo.promotion_id}`}
             </h2>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
-              {promo.discount_rate && <span>הנחה: <strong className="text-[#e31837]">₪{promo.discount_rate}</strong></span>}
+              {promo.discount_rate && <span>הנחה לפריט: <strong className="text-[#e31837]">₪{promo.discount_rate}</strong></span>}
               {promo.discounted_price && <span>מחיר מבצע: <strong className="text-green-700">{formatCurrency(promo.discounted_price)}</strong></span>}
               {promo.min_qty && <span>מינ׳: {promo.min_qty}</span>}
               {promo.end_date && <span className="text-xs text-gray-400">עד {String(promo.end_date).slice(0, 10)}</span>}
@@ -568,22 +575,29 @@ function PromoModal({
 
         {originalItems.length > 0 && (
           <div className="mt-4 space-y-2">
-            {originalItems.map(item => (
-              <div key={item.item_code} className="rounded-lg border border-gray-200 bg-[#fafafa] p-3">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <p className="font-bold text-[#171717]">{item.item_name || item.item_code}</p>
-                  <span className="text-xs text-gray-400">
-                    ברקוד: <span dir="ltr" className="font-mono">{item.item_code}</span>
-                  </span>
+            {originalItems.map(item => {
+              const originalMinPrice = minQty ? Number(item.item_price) * minQty : null;
+              const savings = originalMinPrice && discountedPrice ? originalMinPrice - discountedPrice : null;
+
+              return (
+                <div key={item.item_code} className="rounded-lg border border-gray-200 bg-[#fafafa] p-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                    <p className="font-bold text-[#171717]">{item.item_name || item.item_code}</p>
+                    <span className="text-xs text-gray-400">
+                      ברקוד: <span dir="ltr" className="font-mono">{item.item_code}</span>
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
+                    {promo.discount_rate && <span>הנחה לפריט: <strong className="text-[#e31837]">₪{promo.discount_rate}</strong></span>}
+                    {savings && savings > 0 && <span>חיסכון כולל: <strong className="text-[#e31837]">{formatCurrency(savings)}</strong></span>}
+                    <span>מקורי ליחידה: <strong className="text-[#171717]">{formatCurrency(item.item_price)}</strong></span>
+                    {originalMinPrice && (
+                      <span>מקורי למינ׳: <strong className="text-[#171717]">{formatCurrency(originalMinPrice)}</strong></span>
+                    )}
+                  </div>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
-                  <span>מקורי ליחידה: <strong className="text-[#171717]">{formatCurrency(item.item_price)}</strong></span>
-                  {minQty && (
-                    <span>מקורי למינ׳: <strong className="text-[#171717]">{formatCurrency(Number(item.item_price) * minQty)}</strong></span>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
