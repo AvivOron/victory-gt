@@ -11,6 +11,7 @@ export default function Header({ branch, lastUpdated }: Props) {
 
   const updatedStr = lastUpdated
     ? new Date(lastUpdated).toLocaleString("he-IL", {
+        timeZone: "Asia/Jerusalem",
         day: "2-digit",
         month: "2-digit",
         year: "numeric",
