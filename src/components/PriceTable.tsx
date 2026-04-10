@@ -245,7 +245,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
       {/* Controls */}
       <div className="sticky top-0 z-10 bg-[#f7f8fa]/95 py-3 backdrop-blur">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1">
+          <div className="grid w-full grid-cols-3 gap-1 sm:flex sm:w-auto">
             <TabBtn active={tab === "prices"} onClick={() => setTab("prices")}>
               מחירים ({productTotalCount.toLocaleString()})
             </TabBtn>
@@ -260,7 +260,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
             value={category}
             onChange={event => setCategory(event.target.value)}
             disabled={categoriesLoading}
-            className={`h-10 w-56 rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold text-[#171717] focus:border-[#e31837] focus:outline-none focus:ring-2 focus:ring-[#e31837]/15 ${categoriesLoading ? "cursor-wait opacity-55" : ""}`}
+            className={`h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold text-[#171717] focus:border-[#e31837] focus:outline-none focus:ring-2 focus:ring-[#e31837]/15 sm:w-56 ${categoriesLoading ? "cursor-wait opacity-55" : ""}`}
           >
             <option value="">{categoriesLoading ? "טוען קטגוריות..." : "כל הקטגוריות"}</option>
             {categories.map(option => (
@@ -538,7 +538,7 @@ function TabBtn({ children, active, onClick }: { children: React.ReactNode; acti
   return (
     <button
       onClick={onClick}
-      className={`h-10 rounded-lg border px-4 text-sm font-bold transition-all whitespace-nowrap ${
+      className={`min-w-0 rounded-lg border px-2 py-2 text-center text-xs font-bold leading-tight transition-all sm:h-10 sm:px-4 sm:text-sm sm:whitespace-nowrap ${
         active ? "border-[#e31837] bg-[#e31837] text-white shadow-sm" : "border-red-200 bg-white text-[#e31837] hover:border-[#e31837] hover:bg-red-50"
       }`}
     >
