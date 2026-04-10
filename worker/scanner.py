@@ -52,8 +52,9 @@ SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
 SESSION.mount("https://", requests.adapters.HTTPAdapter(pool_connections=8, pool_maxsize=8))
 
-FILE_CACHE = "filelist_cache.json"
-CATEGORY_CACHE = "category_cache.json"
+_DIR = os.path.dirname(os.path.abspath(__file__))
+FILE_CACHE = os.path.join(_DIR, "filelist_cache.json")
+CATEGORY_CACHE = os.path.join(_DIR, "category_cache.json")
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")

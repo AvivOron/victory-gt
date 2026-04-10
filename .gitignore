@@ -40,7 +40,6 @@ worker/__pycache__/
 worker/*.pyc
 worker/branch_id.txt
 worker/filelist_cache.json
-worker/category_cache.json
 worker/venv/
 
 # local database
