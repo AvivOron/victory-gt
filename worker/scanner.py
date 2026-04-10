@@ -115,6 +115,30 @@ def turso_execute(statements: list[dict]) -> None:
     r.raise_for_status()
 
 
+def turso_query(sql: str, args: list = []) -> list[dict]:
+    """Run a SELECT and return rows as list of dicts."""
+    url = f"{turso_url()}/v2/pipeline"
+    payload = {
+        "requests": [
+            {"type": "execute", "stmt": {"sql": sql, "args": [{"type": "text", "value": str(v)} for v in args]}},
+            {"type": "close"},
+        ]
+    }
+    r = SESSION.post(
+        url,
+        json=payload,
+        headers={"Authorization": f"Bearer {TURSO_TOKEN}"},
+        timeout=30,
+    )
+    r.raise_for_status()
+    data = r.json()
+    result = data["results"][0]
+    if result.get("type") == "error":
+        return []
+    cols = [c["name"] for c in result["response"]["result"]["cols"]]
+    return [dict(zip(cols, [cell.get("value") for cell in row])) for row in result["response"]["result"]["rows"]]
+
+
 def turso_execute_ignore_errors(statements: list[dict]) -> None:
     for statement in statements:
         try:
@@ -527,6 +551,44 @@ def upsert_promos(rows: list[dict]) -> None:
     log.info("Promos done")
 
 
+def delete_stale_products(branch_id: str, fresh_item_codes: set[str]) -> None:
+    if not fresh_item_codes:
+        log.warning("No fresh products — skipping stale product deletion to avoid wiping DB.")
+        return
+    existing = turso_query("SELECT item_code FROM products WHERE branch_id = ?", [branch_id])
+    stale = [r["item_code"] for r in existing if r["item_code"] not in fresh_item_codes]
+    if not stale:
+        log.info("No stale products to delete.")
+        return
+    log.info("Deleting %d stale products for branch %s", len(stale), branch_id)
+    stmts = [
+        {"sql": "DELETE FROM products WHERE item_code = ? AND branch_id = ?", "args": [code, branch_id]}
+        for code in stale
+    ]
+    for i in range(0, len(stmts), BATCH):
+        turso_execute(stmts[i : i + BATCH])
+    log.info("Stale products deleted.")
+
+
+def delete_stale_promos(branch_id: str, fresh_promo_ids: set[str]) -> None:
+    if not fresh_promo_ids:
+        log.warning("No fresh promos — skipping stale promo deletion to avoid wiping DB.")
+        return
+    existing = turso_query("SELECT promotion_id FROM promos WHERE branch_id = ?", [branch_id])
+    stale = [r["promotion_id"] for r in existing if r["promotion_id"] not in fresh_promo_ids]
+    if not stale:
+        log.info("No stale promos to delete.")
+        return
+    log.info("Deleting %d stale promos for branch %s", len(stale), branch_id)
+    stmts = [
+        {"sql": "DELETE FROM promos WHERE promotion_id = ? AND branch_id = ?", "args": [pid, branch_id]}
+        for pid in stale
+    ]
+    for i in range(0, len(stmts), BATCH):
+        turso_execute(stmts[i : i + BATCH])
+    log.info("Stale promos deleted.")
+
+
 # ── Main scan ─────────────────────────────────────────────────────────────────
 def run_scan() -> None:
     log.info("=== Starting Victory GT scan ===")
@@ -558,6 +620,8 @@ def run_scan() -> None:
     products = categorize_products(products)
     upsert_products(products)
     upsert_promos(promos)
+    delete_stale_products(branch_id, {p["item_code"] for p in products})
+    delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
 
     log.info("=== Scan complete in %.1fs ===", time.time() - start)
 
