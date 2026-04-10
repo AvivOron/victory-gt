@@ -75,7 +75,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
 
   useEffect(() => {
     async function fetchCategories() {
-      const res = await fetch("/api/categories");
+      const res = await fetch("/victory-gt/api/categories");
       const data: CategoriesResponse = await res.json();
       setCategories(data.categories);
     }
@@ -95,7 +95,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
         sort: sortCol,
         dir: sortDir,
       });
-      const res = await fetch(`/api/products?${params}`);
+      const res = await fetch(`/victory-gt/api/products?${params}`);
       const data: ProductsResponse = await res.json();
       setProducts(data.products);
       setTotal(data.total);
@@ -117,7 +117,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
         page: String(page),
         sort: promoSort,
       });
-      const res = await fetch(`/api/promos?${params}`);
+      const res = await fetch(`/victory-gt/api/promos?${params}`);
       const data: PromosResponse = await res.json();
       setPromos(data.promos);
       setPromoTotal(data.total);
