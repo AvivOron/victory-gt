@@ -79,11 +79,6 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   useEffect(() => { setPage(1); }, [debouncedSearch, category, sortCol, sortDir, tab]);
 
   useEffect(() => {
-    setSearch("");
-    setDebouncedSearch("");
-  }, [tab]);
-
-  useEffect(() => {
     async function fetchCategories() {
       const res = await fetch("/victory-gt/api/categories");
       const data: CategoriesResponse = await res.json();
@@ -182,6 +177,10 @@ export default function PriceTable({ productCount, promoCount }: Props) {
     setDebouncedSearch("");
     setCategory("");
   }
+
+  useEffect(() => {
+    clearFilters();
+  }, [tab]);
 
   const hasActiveFilters = search || debouncedSearch || category;
 
