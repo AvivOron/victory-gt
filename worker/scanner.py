@@ -1,7 +1,7 @@
 """
 Victory Ganei Tikva Price Scanner — Raspberry Pi Worker
 Fetches price & promo XML files from Israel's price transparency database
-(laibcatalog.co.il) and upserts to Turso (libSQL).
+(laibcatalog.co.il) and upserts to Neon (Postgres).
 
 Run once:
   python scanner.py
@@ -29,13 +29,14 @@ from xml.etree import ElementTree as ET
 
 import requests
 import schedule
+import psycopg2
+import psycopg2.extras
 from dotenv import load_dotenv
 
 # ── Config ────────────────────────────────────────────────────────────────────
 load_dotenv()
 
-TURSO_URL: str = os.environ["TURSO_DB_URL"]
-TURSO_TOKEN: str = os.environ["TURSO_AUTH_TOKEN"]
+DATABASE_URL: str = os.environ["DATABASE_URL"]
 GANEI_TIKVA_BRANCH_ID: str = os.environ.get("GANEI_TIKVA_BRANCH_ID", "")
 
 CHAIN_ID = "7290696200003"
@@ -89,70 +90,78 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# ── Turso HTTP client ─────────────────────────────────────────────────────────
-# Turso exposes a plain HTTPS pipeline API — no SDK required.
-# POST https://<db>.turso.io/v2/pipeline  with Bearer auth.
+# ── Neon / Postgres client ────────────────────────────────────────────────────
 
-def turso_url() -> str:
-    """Convert libsql:// URL to https:// for the HTTP API."""
-    return re.sub(r"^libsql://", "https://", TURSO_URL)
+def get_conn():
+    return psycopg2.connect(DATABASE_URL)
 
 
-def turso_execute(statements: list[dict]) -> None:
-    """Send a batch of {sql, args} statements to Turso via HTTP pipeline."""
-    url = f"{turso_url()}/v2/pipeline"
-    payload = {
-        "requests": [
-            {"type": "execute", "stmt": {"sql": s["sql"], "args": [{"type": "text", "value": str(v)} for v in s["args"]]}}
-            for s in statements
-        ] + [{"type": "close"}]
-    }
-    r = SESSION.post(
-        url,
-        json=payload,
-        headers={"Authorization": f"Bearer {TURSO_TOKEN}"},
-        timeout=30,
-    )
-    r.raise_for_status()
+def db_execute(statements: list[dict]) -> None:
+    """Execute a batch of {sql, args} statements in a single transaction."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for s in statements:
+                cur.execute(s["sql"], s["args"])
 
 
-def turso_query(sql: str, args: list = []) -> list[dict]:
+def db_query(sql: str, args: list = []) -> list[dict]:
     """Run a SELECT and return rows as list of dicts."""
-    url = f"{turso_url()}/v2/pipeline"
-    payload = {
-        "requests": [
-            {"type": "execute", "stmt": {"sql": sql, "args": [{"type": "text", "value": str(v)} for v in args]}},
-            {"type": "close"},
-        ]
-    }
-    r = SESSION.post(
-        url,
-        json=payload,
-        headers={"Authorization": f"Bearer {TURSO_TOKEN}"},
-        timeout=30,
-    )
-    r.raise_for_status()
-    data = r.json()
-    result = data["results"][0]
-    if result.get("type") == "error":
-        return []
-    cols = [c["name"] for c in result["response"]["result"]["cols"]]
-    return [dict(zip(cols, [cell.get("value") for cell in row])) for row in result["response"]["result"]["rows"]]
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, args)
+            return [dict(r) for r in cur.fetchall()]
 
 
-def turso_execute_ignore_errors(statements: list[dict]) -> None:
+def db_execute_ignore_errors(statements: list[dict]) -> None:
     for statement in statements:
         try:
-            turso_execute([statement])
+            db_execute([statement])
         except Exception as e:
             log.debug("Ignoring schema statement failure for %s: %s", statement["sql"], e)
 
 
 def ensure_schema() -> None:
-    """Apply lightweight migrations needed by newer scanner versions."""
-    turso_execute_ignore_errors([
-        {"sql": "ALTER TABLE products ADD COLUMN category TEXT", "args": []},
+    """Create tables and indexes if they don't exist."""
+    db_execute([
+        {"sql": """CREATE TABLE IF NOT EXISTS branches (
+            branch_id TEXT PRIMARY KEY,
+            chain_id TEXT,
+            store_name TEXT,
+            city TEXT,
+            address TEXT,
+            zip_code TEXT,
+            last_updated TEXT
+        )""", "args": []},
+        {"sql": """CREATE TABLE IF NOT EXISTS products (
+            item_code TEXT,
+            branch_id TEXT,
+            item_name TEXT,
+            item_price REAL,
+            unit_of_measure TEXT,
+            quantity TEXT,
+            category TEXT,
+            manufacturer_name TEXT,
+            last_updated TEXT,
+            PRIMARY KEY (item_code, branch_id)
+        )""", "args": []},
+        {"sql": """CREATE TABLE IF NOT EXISTS promos (
+            promotion_id TEXT,
+            branch_id TEXT,
+            description TEXT,
+            discount_rate TEXT,
+            min_qty TEXT,
+            max_qty TEXT,
+            min_purchase_amount TEXT,
+            discounted_price TEXT,
+            start_date TEXT,
+            end_date TEXT,
+            item_codes TEXT,
+            last_updated TEXT,
+            PRIMARY KEY (promotion_id, branch_id)
+        )""", "args": []},
         {"sql": "CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)", "args": []},
+        {"sql": "CREATE INDEX IF NOT EXISTS idx_products_branch ON products(branch_id)", "args": []},
+        {"sql": "CREATE INDEX IF NOT EXISTS idx_promos_branch ON promos(branch_id)", "args": []},
     ])
 
 
@@ -509,18 +518,23 @@ def fetch_branch_data(branch_id: str, files: list[str]) -> tuple[list[dict], lis
     return all_products, all_promos
 
 
-# ── Turso upsert ──────────────────────────────────────────────────────────────
+# ── Neon upsert ───────────────────────────────────────────────────────────────
 def upsert_branches(rows: list[dict]) -> None:
     if not rows:
         return
     log.info("Upserting %d branches...", len(rows))
     stmts = [
-        {"sql": "INSERT OR REPLACE INTO branches (branch_id,chain_id,store_name,city,address,zip_code,last_updated) VALUES (?,?,?,?,?,?,?)",
+        {"sql": """INSERT INTO branches (branch_id,chain_id,store_name,city,address,zip_code,last_updated)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (branch_id) DO UPDATE SET
+                     chain_id=EXCLUDED.chain_id, store_name=EXCLUDED.store_name,
+                     city=EXCLUDED.city, address=EXCLUDED.address,
+                     zip_code=EXCLUDED.zip_code, last_updated=EXCLUDED.last_updated""",
          "args": [r["branch_id"], r["chain_id"], r["store_name"], r["city"], r["address"], r["zip_code"], r["last_updated"]]}
         for r in rows
     ]
     for i in range(0, len(stmts), BATCH):
-        turso_execute(stmts[i : i + BATCH])
+        db_execute(stmts[i : i + BATCH])
     log.info("Branches done")
 
 
@@ -529,12 +543,18 @@ def upsert_products(rows: list[dict]) -> None:
         return
     log.info("Upserting %d products...", len(rows))
     stmts = [
-        {"sql": "INSERT OR REPLACE INTO products (item_code,branch_id,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,last_updated) VALUES (?,?,?,?,?,?,?,?,?)",
+        {"sql": """INSERT INTO products (item_code,branch_id,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,last_updated)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (item_code, branch_id) DO UPDATE SET
+                     item_name=EXCLUDED.item_name, item_price=EXCLUDED.item_price,
+                     unit_of_measure=EXCLUDED.unit_of_measure, quantity=EXCLUDED.quantity,
+                     category=EXCLUDED.category, manufacturer_name=EXCLUDED.manufacturer_name,
+                     last_updated=EXCLUDED.last_updated""",
          "args": [r["item_code"], r["branch_id"], r["item_name"], r["item_price"], r["unit_of_measure"], r["quantity"], r.get("category", DEFAULT_CATEGORY), r["manufacturer_name"], r["last_updated"]]}
         for r in rows
     ]
     for i in range(0, len(stmts), BATCH):
-        turso_execute(stmts[i : i + BATCH])
+        db_execute(stmts[i : i + BATCH])
     log.info("Products done")
 
 
@@ -543,12 +563,19 @@ def upsert_promos(rows: list[dict]) -> None:
         return
     log.info("Upserting %d promos...", len(rows))
     stmts = [
-        {"sql": "INSERT OR REPLACE INTO promos (promotion_id,branch_id,description,discount_rate,min_qty,max_qty,min_purchase_amount,discounted_price,start_date,end_date,item_codes,last_updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        {"sql": """INSERT INTO promos (promotion_id,branch_id,description,discount_rate,min_qty,max_qty,min_purchase_amount,discounted_price,start_date,end_date,item_codes,last_updated)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (promotion_id, branch_id) DO UPDATE SET
+                     description=EXCLUDED.description, discount_rate=EXCLUDED.discount_rate,
+                     min_qty=EXCLUDED.min_qty, max_qty=EXCLUDED.max_qty,
+                     min_purchase_amount=EXCLUDED.min_purchase_amount, discounted_price=EXCLUDED.discounted_price,
+                     start_date=EXCLUDED.start_date, end_date=EXCLUDED.end_date,
+                     item_codes=EXCLUDED.item_codes, last_updated=EXCLUDED.last_updated""",
          "args": [r["promotion_id"], r["branch_id"], r["description"], r["discount_rate"], r["min_qty"], r["max_qty"], r["min_purchase_amount"], r["discounted_price"], r["start_date"], r["end_date"], r["item_codes"], r["last_updated"]]}
         for r in rows
     ]
     for i in range(0, len(stmts), BATCH):
-        turso_execute(stmts[i : i + BATCH])
+        db_execute(stmts[i : i + BATCH])
     log.info("Promos done")
 
 
@@ -556,18 +583,13 @@ def delete_stale_products(branch_id: str, fresh_item_codes: set[str]) -> None:
     if not fresh_item_codes:
         log.warning("No fresh products — skipping stale product deletion to avoid wiping DB.")
         return
-    existing = turso_query("SELECT item_code FROM products WHERE branch_id = ?", [branch_id])
+    existing = db_query("SELECT item_code FROM products WHERE branch_id = %s", [branch_id])
     stale = [r["item_code"] for r in existing if r["item_code"] not in fresh_item_codes]
     if not stale:
         log.info("No stale products to delete.")
         return
     log.info("Deleting %d stale products for branch %s", len(stale), branch_id)
-    stmts = [
-        {"sql": "DELETE FROM products WHERE item_code = ? AND branch_id = ?", "args": [code, branch_id]}
-        for code in stale
-    ]
-    for i in range(0, len(stmts), BATCH):
-        turso_execute(stmts[i : i + BATCH])
+    db_execute([{"sql": "DELETE FROM products WHERE branch_id = %s AND item_code = ANY(%s)", "args": [branch_id, stale]}])
     log.info("Stale products deleted.")
 
 
@@ -575,18 +597,13 @@ def delete_stale_promos(branch_id: str, fresh_promo_ids: set[str]) -> None:
     if not fresh_promo_ids:
         log.warning("No fresh promos — skipping stale promo deletion to avoid wiping DB.")
         return
-    existing = turso_query("SELECT promotion_id FROM promos WHERE branch_id = ?", [branch_id])
+    existing = db_query("SELECT promotion_id FROM promos WHERE branch_id = %s", [branch_id])
     stale = [r["promotion_id"] for r in existing if r["promotion_id"] not in fresh_promo_ids]
     if not stale:
         log.info("No stale promos to delete.")
         return
     log.info("Deleting %d stale promos for branch %s", len(stale), branch_id)
-    stmts = [
-        {"sql": "DELETE FROM promos WHERE promotion_id = ? AND branch_id = ?", "args": [pid, branch_id]}
-        for pid in stale
-    ]
-    for i in range(0, len(stmts), BATCH):
-        turso_execute(stmts[i : i + BATCH])
+    db_execute([{"sql": "DELETE FROM promos WHERE branch_id = %s AND promotion_id = ANY(%s)", "args": [branch_id, stale]}])
     log.info("Stale promos deleted.")
 
 

@@ -1,9 +1,17 @@
-import { createClient } from "@libsql/client";
+import { neon } from "@neondatabase/serverless";
 
-export const db = createClient({
-  url: process.env.TURSO_DB_URL || "file:placeholder.db",
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const sql = neon(process.env.DATABASE_URL!);
+
+// Neon returns rows as plain objects — wrap in the same interface as before
+export const db = {
+  async execute({ sql: query, args }: { sql: string; args?: unknown[] }): Promise<{ rows: Record<string, unknown>[] }> {
+    // Convert SQLite ? placeholders to Postgres $1, $2, ...
+    let i = 0;
+    const pgQuery = query.replace(/\?/g, () => `$${++i}`);
+    const rows = await sql.query(pgQuery, args ?? []);
+    return { rows: rows as Record<string, unknown>[] };
+  },
+};
 
 export interface Product {
   item_code: string;
@@ -28,7 +36,7 @@ export interface Promo {
   discounted_price: string;
   start_date: string;
   end_date: string;
-  item_codes: string; // stored as JSON string in SQLite
+  item_codes: string;
   original_items?: PromoOriginalItem[];
   branch_id: string;
   last_updated: string;
