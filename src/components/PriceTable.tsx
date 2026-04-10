@@ -58,6 +58,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [total, setTotal] = useState(productCount);
+  const [productTotalCount, setProductTotalCount] = useState(productCount);
   const [pages, setPages] = useState(1);
   const [promos, setPromos] = useState<Promo[]>([]);
   const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
@@ -76,6 +77,11 @@ export default function PriceTable({ productCount, promoCount }: Props) {
 
   // Reset page on search/sort change
   useEffect(() => { setPage(1); }, [debouncedSearch, category, sortCol, sortDir, tab]);
+
+  useEffect(() => {
+    setSearch("");
+    setDebouncedSearch("");
+  }, [tab]);
 
   useEffect(() => {
     async function fetchCategories() {
@@ -128,6 +134,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
       const data: ProductsResponse = await res.json();
       setProducts(data.products);
       setTotal(data.total);
+      if (tab === "prices") setProductTotalCount(data.total);
       if (data.promoTotal !== null) setPromoTotal(data.promoTotal);
       else setPromoTotal(promoCount);
       setPages(data.pages);
@@ -145,8 +152,13 @@ export default function PriceTable({ productCount, promoCount }: Props) {
       const data: PromosResponse = await res.json();
       setPromos(data.promos);
       setPromoTotal(data.total);
-      if (data.productTotal !== null) setTotal(data.productTotal);
-      else setTotal(productCount);
+      if (data.productTotal !== null) {
+        setTotal(data.productTotal);
+        setProductTotalCount(data.productTotal);
+      } else {
+        setTotal(productCount);
+        setProductTotalCount(productCount);
+      }
       setPromoPages(data.pages);
     } finally {
       setLoading(false);
@@ -236,7 +248,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex gap-1">
             <TabBtn active={tab === "prices"} onClick={() => setTab("prices")}>
-              מחירים ({total.toLocaleString()})
+              מחירים ({productTotalCount.toLocaleString()})
             </TabBtn>
             <TabBtn active={tab === "promos"} onClick={() => setTab("promos")}>
               מבצעים ({promoTotal.toLocaleString()})
