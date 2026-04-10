@@ -30,6 +30,10 @@ interface EnrichedPromo extends PromoRow {
   original_items: PriceRow[];
 }
 
+function searchTokens(query: string) {
+  return query.split(/\s+/).map(token => token.trim()).filter(Boolean);
+}
+
 function parseItemCodes(raw: unknown): string[] {
   if (typeof raw !== "string") return [];
   try {
@@ -85,15 +89,21 @@ export async function GET(req: NextRequest) {
 
   if (BRANCH) { conditions.push("branch_id = ?"); args.push(BRANCH); }
   if (q) {
-    conditions.push("(description LIKE ? OR promotion_id LIKE ?)");
-    args.push(`%${q}%`, `%${q}%`);
+    const tokens = searchTokens(q);
+    for (const token of tokens) {
+      conditions.push("(description LIKE ? OR promotion_id LIKE ?)");
+      args.push(`%${token}%`, `%${token}%`);
+    }
   }
   if (q || category) {
     const productConditions: string[] = [];
     const productArgs: string[] = [];
     if (q) {
-      productConditions.push("(item_name LIKE ? OR item_code LIKE ? OR manufacturer_name LIKE ?)");
-      productArgs.push(`%${q}%`, `%${q}%`, `%${q}%`);
+      const tokens = searchTokens(q);
+      for (const token of tokens) {
+        productConditions.push("(item_name LIKE ? OR item_code LIKE ? OR manufacturer_name LIKE ?)");
+        productArgs.push(`%${token}%`, `%${token}%`, `%${token}%`);
+      }
     }
     if (category) {
       productConditions.push("category = ?");

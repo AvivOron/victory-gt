@@ -12,6 +12,10 @@ interface PriceRow {
   category: string;
 }
 
+function searchTokens(query: string) {
+  return query.split(/\s+/).map(token => token.trim()).filter(Boolean);
+}
+
 function parseItemCodes(raw: unknown): string[] {
   if (typeof raw !== "string") return [];
   try {
@@ -40,8 +44,11 @@ export async function GET(req: NextRequest) {
 
   if (BRANCH) { conditions.push("branch_id = ?"); args.push(BRANCH); }
   if (q) {
-    conditions.push("(item_name LIKE ? OR item_code LIKE ? OR manufacturer_name LIKE ?)");
-    args.push(`%${q}%`, `%${q}%`, `%${q}%`);
+    const tokens = searchTokens(q);
+    for (const token of tokens) {
+      conditions.push("(item_name LIKE ? OR item_code LIKE ? OR manufacturer_name LIKE ?)");
+      args.push(`%${token}%`, `%${token}%`, `%${token}%`);
+    }
   }
   if (category) {
     conditions.push("category = ?");
@@ -133,8 +140,11 @@ export async function GET(req: NextRequest) {
     const promoArgs: string[] = [];
     if (BRANCH) { promoConditions.push("branch_id = ?"); promoArgs.push(BRANCH); }
     if (q) {
-      promoConditions.push("(description LIKE ? OR promotion_id LIKE ?)");
-      promoArgs.push(`%${q}%`, `%${q}%`);
+      const tokens = searchTokens(q);
+      for (const token of tokens) {
+        promoConditions.push("(description LIKE ? OR promotion_id LIKE ?)");
+        promoArgs.push(`%${token}%`, `%${token}%`);
+      }
     }
     const promoWhere = promoConditions.length ? `WHERE ${promoConditions.join(" AND ")}` : "";
 
