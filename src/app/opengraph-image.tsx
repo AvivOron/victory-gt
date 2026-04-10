@@ -4,6 +4,13 @@ export const alt = "ויקטורי גני תקווה — מחירון ומבצע
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
+// Satori does not support direction:rtl — reverse strings so they render correctly LTR
+function rev(s: string) {
+  return [...s].reverse().join("");
+}
+
+const rtl = {};
+
 export default function OgImage() {
   return new ImageResponse(
     (
@@ -18,7 +25,6 @@ export default function OgImage() {
           padding: "72px 80px",
           fontFamily: "sans-serif",
           position: "relative",
-          direction: "rtl",
         }}
       >
         {/* Red glow */}
@@ -55,9 +61,9 @@ export default function OgImage() {
         </svg>
 
         {/* Main content */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16, position: "relative" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 16, position: "relative" }}>
           {/* Badge */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <div style={{ display: "flex", flexDirection: "row-reverse", alignItems: "center", gap: 8, marginBottom: 4 }}>
             <div style={{ width: 36, height: 36, borderRadius: 8, background: "#e31837", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <span style={{ color: "#fff", fontWeight: 900, fontSize: 20, display: "flex" }}>V</span>
             </div>
@@ -67,18 +73,18 @@ export default function OgImage() {
           </div>
 
           {/* Title */}
-          <div style={{ display: "flex", fontSize: 76, fontWeight: 900, color: "#171717", letterSpacing: "-2px", lineHeight: 1 }}>
-            <span>ויקטורי&nbsp;</span>
-            <span style={{ color: "#e31837" }}>גני תקווה</span>
+          <div style={{ display: "flex", flexDirection: "row-reverse", fontSize: 76, fontWeight: 900, color: "#171717", letterSpacing: "-2px", lineHeight: 1 }}>
+            <span>{rev("ויקטורי\u00a0")}</span>
+            <span style={{ color: "#e31837" }}>{rev("גני תקווה")}</span>
           </div>
 
           {/* Subtitle */}
           <div style={{ display: "flex", fontSize: 30, color: "rgba(0,0,0,0.45)", marginTop: 4 }}>
-            מחירון ומבצעים עדכניים · נתוני שקיפות מחירים רשמיים
+            {rev("מחירון ומבצעים עדכניים · נתוני שקיפות מחירים רשמיים")}
           </div>
 
           {/* Pills */}
-          <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
+          <div style={{ display: "flex", flexDirection: "row-reverse", gap: 12, marginTop: 24 }}>
             {["עדכון כל 3 שעות", "מבצעים פעילים", "חינמי"].map((label) => (
               <div
                 key={label}
@@ -92,7 +98,7 @@ export default function OgImage() {
                   color: "#e31837",
                 }}
               >
-                {label}
+                {rev(label)}
               </div>
             ))}
           </div>
@@ -101,18 +107,19 @@ export default function OgImage() {
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 36 }}>
             <div style={{
               display: "flex",
-              padding: "12px 32px",
+              padding: "14px 36px",
               borderRadius: 999,
               background: "#e31837",
-              fontSize: 22,
-              fontWeight: 700,
+              fontSize: 24,
+              fontWeight: 800,
               color: "#ffffff",
+              letterSpacing: "-0.3px",
             }}>
-              בדוק מחירים עכשיו ←
+              {rev("← בדוק מחירים עכשיו בחינם")}
             </div>
-            <div style={{ display: "flex", fontSize: 18, color: "rgba(0,0,0,0.25)" }}>
-              avivo.dev/victory-gt
-            </div>
+          </div>
+          <div style={{ display: "flex", fontSize: 18, color: "rgba(0,0,0,0.3)", marginTop: 12 }}>
+            avivo.dev/victory-gt
           </div>
         </div>
       </div>
