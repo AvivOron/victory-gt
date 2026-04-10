@@ -108,7 +108,7 @@ export default function OgImage() {
               fontWeight: 700,
               color: "#ffffff",
             }}>
-              לצפייה במחירון ←
+              בדוק מחירים עכשיו ←
             </div>
             <div style={{ display: "flex", fontSize: 18, color: "rgba(0,0,0,0.25)" }}>
               avivo.dev/victory-gt

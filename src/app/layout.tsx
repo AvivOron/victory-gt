@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.avivo.dev"),
   title: {
-    default: "ויקטורי גני תקווה — מחירון ומבצעים עדכניים לסניף",
+    default: "ויקטורי גני תקווה — מחירון ומבצעים עדכניים | avivo.dev",
     template: "%s | ויקטורי גני תקווה",
   },
   description:
@@ -25,12 +25,12 @@ export const metadata: Metadata = {
     locale: "he_IL",
     url: "https://www.avivo.dev/victory-gt",
     siteName: "ויקטורי גני תקווה מחירון",
-    title: "ויקטורי גני תקווה — מחירון ומבצעים עדכניים לסניף",
+    title: "ויקטורי גני תקווה — מחירון ומבצעים עדכניים | avivo.dev",
     description:
       "מחירון שקוף ועדכני לסניף ויקטורי גני תקווה. כל המחירים והמבצעים הפעילים, מתעדכן אוטומטית כל 3 שעות ממאגר שקיפות המחירים הרשמי.",
     images: [
       {
-        url: "/victory-gt/opengraph-image",
+        url: "https://www.avivo.dev/victory-gt/opengraph-image",
         width: 1200,
         height: 630,
         alt: "ויקטורי גני תקווה — מחירון ומבצעים",
