@@ -2,7 +2,7 @@ import { db, type Branch } from "@/lib/db";
 import LandingHero from "@/components/LandingHero";
 import Link from "next/link";
 
-export const revalidate = 300;
+export const revalidate = 10800;
 
 const BRANCH = process.env.GANEI_TIKVA_BRANCH_ID || "";
 

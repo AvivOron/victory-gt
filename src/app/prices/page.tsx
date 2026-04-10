@@ -3,7 +3,7 @@ import PriceTable from "@/components/PriceTable";
 import Header from "@/components/Header";
 import type { Metadata } from "next";
 
-export const revalidate = 300;
+export const revalidate = 10800;
 
 export const metadata: Metadata = {
   title: "מחירון ומבצעים",
