@@ -69,7 +69,7 @@ python scanner.py --watch
 ```bash
 cp .env.local.example .env.local
 # Fill in DATABASE_URL, GANEI_TIKVA_BRANCH_ID, NEXTAUTH_SECRET,
-# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and NEXTAUTH_URL
+# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, NEXTAUTH_URL, and VERCEL
 
 npm run dev        # local dev
 vercel deploy      # deploy to Vercel
@@ -80,6 +80,7 @@ Add these env vars in the Vercel dashboard (Settings → Environment Variables):
 - `GANEI_TIKVA_BRANCH_ID`
 - `NEXTAUTH_SECRET`
 - `NEXTAUTH_URL`
+- `VERCEL`
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 
@@ -88,7 +89,15 @@ For Google OAuth, add an authorized redirect URI for each environment:
 - Local: `http://localhost:3000/victory-gt/api/auth/callback/google`
 - Production: `https://your-domain.example/victory-gt/api/auth/callback/google`
 
-`NEXTAUTH_URL` must match the exact origin and base path you are using. If local dev starts on a different port, update it accordingly, for example `http://localhost:3001/victory-gt`.
+Use the same convention as `tails-and-choices`: `NEXTAUTH_URL` should be the full auth endpoint, including the base path and `/api/auth`.
+
+Examples:
+- Local: `NEXTAUTH_URL=http://localhost:3000/victory-gt/api/auth`
+- Production: `NEXTAUTH_URL=https://www.avivo.dev/victory-gt/api/auth`
+
+If local dev starts on a different port, update the same full path, for example `http://localhost:3001/victory-gt/api/auth`.
+
+Important: for this app on Vercel, set `VERCEL` to an empty value. With `next-auth` v4 and a `basePath`, leaving `VERCEL` populated can make the OAuth callback drop `/victory-gt` and fall back to `/api/auth`.
 
 ## AI product categories
 
