@@ -13,6 +13,8 @@ Cron alternative:
   0 8,14 * * * cd /home/pi/victory-gt/worker && source venv/bin/activate && python scanner.py >> /var/log/victory.log 2>&1
 """
 
+from __future__ import annotations
+
 import os
 import gzip
 import re
@@ -535,9 +537,9 @@ def run_scan() -> None:
     branch_id = GANEI_TIKVA_BRANCH_ID or find_ganei_tikva(branches)
     if not branch_id:
         ids = list({
-            m.group(1)
+            re.search(r"-(\d+)-\d{12}", f).group(1)
             for f in files
-            if (m := re.search(r"-(\d+)-\d{12}", f))
+            if re.search(r"-(\d+)-\d{12}", f)
         })
         log.warning("Could not find Ganei Tikva branch. Available IDs: %s", ids)
         log.warning("Set GANEI_TIKVA_BRANCH_ID in .env and rerun.")
