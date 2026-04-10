@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 const BASE_URL = "https://avivo.dev/victory-gt";
-const OG_IMAGE = "https://avivo.dev/victory-gt/opengraph-image";
+const OG_IMAGE = "https://avivo.dev/victory-gt/api/og";
 const TITLE = "ויקטורי גני תקווה — מחירון ומבצעים עדכניים | avivo.dev";
 const DESCRIPTION =
   "מחירון שקוף ועדכני לסניף ויקטורי גני תקווה. כל המחירים והמבצעים הפעילים, מתעדכן אוטומטית כל 3 שעות ממאגר שקיפות המחירים הרשמי של רשות ההגנה לצרכן ולסחר הוגן.";
