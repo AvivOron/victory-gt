@@ -282,18 +282,25 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
         });
       };
 
+      const waitForVideoElement = async () => {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < 2000) {
+          if (scannerVideoRef.current) return scannerVideoRef.current;
+          await new Promise(resolve => window.setTimeout(resolve, 50));
+        }
+        throw new Error("Scanner video element is missing");
+      };
+
       const attachPreview = async (stream: MediaStream) => {
         scannerStreamRef.current = stream;
         setScannerCameraActive(true);
-        if (!scannerVideoRef.current) throw new Error("Scanner video element is missing");
-
-        scannerVideoRef.current.srcObject = stream;
-        await scannerVideoRef.current.play();
+        const video = await waitForVideoElement();
+        video.srcObject = stream;
+        await video.play();
 
         const startedAt = Date.now();
         while (Date.now() - startedAt < 4000) {
-          const video = scannerVideoRef.current;
-          if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+          if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
             return true;
           }
           await new Promise(resolve => window.setTimeout(resolve, 200));
@@ -351,9 +358,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
         return;
       }
 
-      if (!scannerVideoRef.current) {
-        throw new Error("Scanner video element is missing");
-      }
+      const video = await waitForVideoElement();
 
       if (!scannerReaderRef.current) {
         const reader = new BrowserMultiFormatReader();
@@ -380,7 +385,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
         throw new Error("Camera preview did not start");
       }
       let handled = false;
-      scannerControlsRef.current = await scannerReaderRef.current.decodeFromStream(stream, scannerVideoRef.current, (result, _error, controls) => {
+      scannerControlsRef.current = await scannerReaderRef.current.decodeFromStream(stream, video, (result, _error, controls) => {
         if (handled) return;
         const rawValue = result?.getText()?.trim();
         if (!rawValue) return;
