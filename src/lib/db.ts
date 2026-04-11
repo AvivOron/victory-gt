@@ -25,7 +25,6 @@ export interface Product {
   branch_id: string;
   last_updated: string;
   is_available: boolean;
-  image_url?: string;
 }
 
 export interface Promo {

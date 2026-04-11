@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
 
   const [dataResult, countResult] = await Promise.all([
     db.execute({
-      sql: `SELECT item_code,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,branch_id,last_updated,COALESCE(is_available,TRUE) as is_available,image_url
+      sql: `SELECT item_code,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,branch_id,last_updated,COALESCE(is_available,TRUE) as is_available
             FROM products ${where} ORDER BY ${sortCol} ${dir} LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
       args,
     }),

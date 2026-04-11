@@ -6,6 +6,8 @@ import type { Product, Promo, PromoOriginalItem } from "@/lib/db";
 import { signIn, useSession } from "next-auth/react";
 import { BarcodeFormat, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 
+const BLOB_BASE = "https://1xwed3vbdtn2bscw.public.blob.vercel-storage.com";
+
 type Tab = "prices" | "promos" | "favourites" | "shopping";
 type SortCol = "item_name" | "item_price" | "manufacturer_name" | "item_code";
 type SortDir = "asc" | "desc";
@@ -896,11 +898,9 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                                 </button>
                               ); })()}
                             </div>
-                            {p.image_url && (
-                              <button type="button" onClick={e => { e.stopPropagation(); setImageModalProduct(p); }} className="flex-shrink-0">
-                                <Image src={p.image_url} alt={p.item_name} width={40} height={40} className="rounded object-contain hover:opacity-80 transition-opacity" />
-                              </button>
-                            )}
+                            <button type="button" onClick={e => { e.stopPropagation(); setImageModalProduct(p); }} className="flex-shrink-0">
+                              <ProductImage itemCode={p.item_code} itemName={p.item_name} width={40} height={40} className="rounded object-contain hover:opacity-80 transition-opacity" />
+                            </button>
                             <div className="min-w-0">
                               <p className="truncate">{p.item_name}</p>
                               {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
@@ -984,11 +984,9 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                           </button>
                         ); })()}
                       </div>
-                      {p.image_url && (
-                        <button type="button" onClick={e => { e.stopPropagation(); setImageModalProduct(p); }} className="flex-shrink-0">
-                          <Image src={p.image_url} alt={p.item_name} width={40} height={40} className="rounded object-contain hover:opacity-80 transition-opacity" />
-                        </button>
-                      )}
+                      <button type="button" onClick={e => { e.stopPropagation(); setImageModalProduct(p); }} className="flex-shrink-0">
+                        <ProductImage itemCode={p.item_code} itemName={p.item_name} width={40} height={40} className="rounded object-contain hover:opacity-80 transition-opacity" />
+                      </button>
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold text-sm leading-snug truncate">{p.item_name}</p>
                         {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
@@ -1104,9 +1102,9 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
             >
               ✕
             </button>
-            <Image
-              src={imageModalProduct.image_url!}
-              alt={imageModalProduct.item_name}
+            <ProductImage
+              itemCode={imageModalProduct.item_code}
+              itemName={imageModalProduct.item_name}
               width={300}
               height={300}
               className="rounded-lg object-contain bg-white p-2 shadow-2xl"
@@ -1884,6 +1882,23 @@ function Pagination({ page, pages, onPage }: { page: number; pages: number; onPa
       )}
       <PgBtn disabled={page === pages} onClick={() => onPage(page + 1)}>›</PgBtn>
     </div>
+  );
+}
+
+function ProductImage({ itemCode, itemName, width, height, className }: { itemCode: string; itemName: string; width: number; height: number; className?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return <span className={`block bg-gray-100 rounded ${className}`} style={{ width, height }} />;
+  }
+  return (
+    <Image
+      src={`${BLOB_BASE}/products/${itemCode}.jpg`}
+      alt={itemName}
+      width={width}
+      height={height}
+      className={className}
+      onError={() => setFailed(true)}
+    />
   );
 }
 

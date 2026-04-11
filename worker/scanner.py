@@ -62,10 +62,6 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
-BLOB_READ_WRITE_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN", "")
-BLOB_STORE_URL = "https://1xwed3vbdtn2bscw.public.blob.vercel-storage.com"
-PRICEZ_IMAGE_URL = "https://m.pricez.co.il/ProductPictures/{item_code}.jpg"
-IMAGE_BATCH = 8   # match SESSION pool_maxsize
 
 MAX_WORKERS = 4  # conservative for Raspberry Pi
 BATCH = 200      # rows per INSERT batch (SQLite has 999-param limit; 200*8cols=1600 — use individual upserts)
@@ -185,7 +181,6 @@ def ensure_schema() -> None:
     # Migrate: add columns if they don't exist yet (existing DBs)
     db_execute_ignore_errors([
         {"sql": "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_available BOOLEAN NOT NULL DEFAULT TRUE", "args": []},
-        {"sql": "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT", "args": []},
     ])
 
 
@@ -633,72 +628,6 @@ def delete_stale_promos(branch_id: str, fresh_promo_ids: set[str]) -> None:
 
 # ── Image upload ──────────────────────────────────────────────────────────────
 
-def upload_image_to_blob(item_code: str, image_bytes: bytes) -> str | None:
-    """Upload image bytes to Vercel Blob and return the public URL."""
-    if not BLOB_READ_WRITE_TOKEN:
-        return None
-    pathname = f"products/{item_code}.jpg"
-    response = requests.put(
-        f"https://blob.vercel-storage.com/{pathname}",
-        data=image_bytes,
-        headers={
-            "Authorization": f"Bearer {BLOB_READ_WRITE_TOKEN}",
-            "Content-Type": "image/jpeg",
-            "x-add-random-suffix": "0",
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.json().get("url")
-
-
-def fetch_and_upload_images(branch_id: str) -> None:
-    """Fetch images from pricez for products that don't have one yet, upload to Vercel Blob."""
-    if not BLOB_READ_WRITE_TOKEN:
-        log.info("BLOB_READ_WRITE_TOKEN not set — skipping image upload")
-        return
-
-    rows = db_query(
-        "SELECT DISTINCT item_code FROM products WHERE branch_id = %s AND image_url IS NULL AND is_available = TRUE",
-        [branch_id],
-    )
-    if not rows:
-        log.info("No products missing images.")
-        return
-
-    item_codes = [r["item_code"] for r in rows]
-    log.info("Fetching images for %d products...", len(item_codes))
-
-    def fetch_one(item_code: str) -> tuple[str, str | None]:
-        url = PRICEZ_IMAGE_URL.format(item_code=item_code)
-        try:
-            r = SESSION.get(url, timeout=15)
-            if r.status_code == 404:
-                return item_code, None
-            r.raise_for_status()
-            blob_url = upload_image_to_blob(item_code, r.content)
-            return item_code, blob_url
-        except Exception as e:
-            log.debug("Image fetch/upload failed for %s: %s", item_code, e)
-            return item_code, None
-
-    results: list[tuple[str, str]] = []
-    with ThreadPoolExecutor(max_workers=IMAGE_BATCH) as pool:
-        for item_code, blob_url in pool.map(fetch_one, item_codes):
-            if blob_url:
-                results.append((blob_url, item_code))
-
-    if results:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.executemany(
-                    "UPDATE products SET image_url = %s WHERE item_code = %s",
-                    results,
-                )
-
-    log.info("Images uploaded: %d / %d", len(results), len(item_codes))
-
-
 # ── Main scan ─────────────────────────────────────────────────────────────────
 def run_scan() -> None:
     log.info("=== Starting Victory GT scan ===")
@@ -748,8 +677,6 @@ def run_scan() -> None:
         delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
         with open(LAST_FILES_CACHE, "w") as fh:
             json.dump(branch_files, fh)
-
-    fetch_and_upload_images(branch_id)
 
     log.info("=== Scan complete in %.1fs ===", time.time() - start)
 
