@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useTransition, useRef } from "react";
+import Image from "next/image";
 import type { Product, Promo, PromoOriginalItem } from "@/lib/db";
 import { signIn, useSession } from "next-auth/react";
 import { BarcodeFormat, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
@@ -114,6 +115,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
 
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [imageModalProduct, setImageModalProduct] = useState<Product | null>(null);
   const [total, setTotal] = useState(productCount);
   const [productTotalCount, setProductTotalCount] = useState(productCount);
   const [pages, setPages] = useState(1);
@@ -894,6 +896,11 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                                 </button>
                               ); })()}
                             </div>
+                            {p.image_url && (
+                              <button type="button" onClick={e => { e.stopPropagation(); setImageModalProduct(p); }} className="flex-shrink-0">
+                                <Image src={p.image_url} alt={p.item_name} width={40} height={40} className="rounded object-contain hover:opacity-80 transition-opacity" />
+                              </button>
+                            )}
                             <div className="min-w-0">
                               <p className="truncate">{p.item_name}</p>
                               {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
@@ -977,6 +984,11 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                           </button>
                         ); })()}
                       </div>
+                      {p.image_url && (
+                        <button type="button" onClick={e => { e.stopPropagation(); setImageModalProduct(p); }} className="flex-shrink-0">
+                          <Image src={p.image_url} alt={p.item_name} width={40} height={40} className="rounded object-contain hover:opacity-80 transition-opacity" />
+                        </button>
+                      )}
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold text-sm leading-snug truncate">{p.item_name}</p>
                         {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
@@ -1076,6 +1088,33 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
           />
         )}
       </div>
+      {imageModalProduct && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setImageModalProduct(null)}
+        >
+          <div className="relative flex flex-col items-center gap-4" onClick={e => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setImageModalProduct(null)}
+              className="absolute -top-3 -right-3 flex h-8 w-8 items-center justify-center rounded-full bg-white text-gray-600 shadow-lg hover:text-black"
+              aria-label="סגור"
+            >
+              ✕
+            </button>
+            <Image
+              src={imageModalProduct.image_url!}
+              alt={imageModalProduct.item_name}
+              width={300}
+              height={300}
+              className="rounded-lg object-contain bg-white p-2 shadow-2xl"
+            />
+            <p className="text-white text-sm font-semibold text-center drop-shadow">{imageModalProduct.item_name}</p>
+          </div>
+        </div>
+      )}
       {selectedProduct && (
         <DiscountModal
           product={selectedProduct}
