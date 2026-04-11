@@ -724,14 +724,19 @@ def sync_images(branch_id: str) -> None:
     os.makedirs(IMAGES_DIR, exist_ok=True)
     os.makedirs(PUBLIC_DIR, exist_ok=True)
 
+    # Pull first so we have the latest state of public/products/ before checking what's missing
+    try:
+        out = subprocess.check_output(["git", "pull", "--rebase"], cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
+        log.info("git pull: %s", out)
+    except subprocess.CalledProcessError as e:
+        log.warning("git pull failed: %s", e.output.decode())
+
     all_codes = [r["item_code"] for r in db_query(
         "SELECT DISTINCT item_code FROM products WHERE branch_id = %s AND is_available = TRUE", [branch_id]
     )]
     missing = [c for c in all_codes if not os.path.exists(os.path.join(PUBLIC_DIR, f"{c}.jpg"))]
 
     log.info("Images missing from repo: %d", len(missing))
-    if not missing:
-        return
 
     # Filter out codes that returned 404 recently
     cache_404 = load_404_cache()
@@ -741,33 +746,25 @@ def sync_images(branch_id: str) -> None:
     if skipped_404:
         log.info("Skipping %d codes with recent 404 (within %d days)", skipped_404, IMAGE_404_TTL_DAYS)
 
-    log.info("Fetching %d images from pricez...", len(to_fetch))
-    ok = err = 0
-    new_404s: list[str] = []
-    with ThreadPoolExecutor(max_workers=IMAGE_BATCH) as pool:
-        for i, (code, result) in enumerate(zip(to_fetch, pool.map(fetch_image, to_fetch)), 1):
-            if result == "ok": ok += 1
-            elif result == "skip": new_404s.append(code)
-            else: err += 1
-            if i % 100 == 0 or i == len(to_fetch):
-                log.info("%d/%d processed (ok=%d, 404=%d, err=%d)", i, len(to_fetch), ok, len(new_404s), err)
+    if to_fetch:
+        log.info("Fetching %d images from pricez...", len(to_fetch))
+        ok = err = 0
+        new_404s: list[str] = []
+        with ThreadPoolExecutor(max_workers=IMAGE_BATCH) as pool:
+            for i, (code, result) in enumerate(zip(to_fetch, pool.map(fetch_image, to_fetch)), 1):
+                if result == "ok": ok += 1
+                elif result == "skip": new_404s.append(code)
+                else: err += 1
+                if i % 100 == 0 or i == len(to_fetch):
+                    log.info("%d/%d processed (ok=%d, 404=%d, err=%d)", i, len(to_fetch), ok, len(new_404s), err)
 
-    if new_404s:
-        now_ts = datetime.now(timezone.utc).timestamp()
-        for code in new_404s:
-            cache_404[code] = now_ts
-        save_404_cache(cache_404)
+        if new_404s:
+            now_ts = datetime.now(timezone.utc).timestamp()
+            for code in new_404s:
+                cache_404[code] = now_ts
+            save_404_cache(cache_404)
 
-    log.info("Image fetch done. ok=%d, 404=%d, err=%d", ok, len(new_404s), err)
-
-    def _git_pull() -> None:
-        try:
-            out = subprocess.check_output(["git", "pull", "--rebase"], cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
-            log.info("git pull: %s", out)
-        except subprocess.CalledProcessError as e:
-            log.warning("git pull failed: %s", e.output.decode())
-
-    _git_pull()
+        log.info("Image fetch done. ok=%d, 404=%d, err=%d", ok, len(new_404s), err)
 
     copied = sum(1 for c in missing if compress_image(c))
     log.info("Images compressed and ready: %d", copied)
