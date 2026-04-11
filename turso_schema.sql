@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS shopping_list_items (
   item_code        TEXT NOT NULL,
   item_name        TEXT,
   item_price       REAL,
+  category         TEXT,
   quantity         INTEGER DEFAULT 1,
   checked          INTEGER DEFAULT 0,
   added_by_user_id TEXT,

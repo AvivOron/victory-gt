@@ -323,7 +323,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     }
   }, [favouriteCodes, promptGoogleSignIn, status]);
 
-  const addToCart = useCallback(async (product: { item_code: string; item_name: string; item_price: number; is_available?: boolean }) => {
+  const addToCart = useCallback(async (product: { item_code: string; item_name: string; item_price: number; category?: string | null; is_available?: boolean }) => {
     if (product.is_available === false) {
       const message = "This product is currently out of stock.";
       setCartWarning(message);
@@ -337,14 +337,25 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
       const res = await fetch("/victory-gt/api/shopping-list", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemCode: product.item_code, itemName: product.item_name, itemPrice: product.item_price }),
+        body: JSON.stringify({ itemCode: product.item_code, itemName: product.item_name, itemPrice: product.item_price, itemCategory: product.category ?? null }),
       });
       if (res.status === 401) { promptGoogleSignIn(); return; }
       if (!res.ok) throw new Error("Failed to update shopping list");
       setShoppingList(current => {
         const existing = current.find(i => i.item_code === product.item_code);
-        if (existing) return current.map(i => i.item_code === product.item_code ? { ...i, quantity: i.quantity + 1 } : i);
-        return [...current, { item_code: product.item_code, item_name: product.item_name, item_price: product.item_price, quantity: 1, checked: false }];
+        if (existing) {
+          return current.map(i => i.item_code === product.item_code
+            ? { ...i, item_name: product.item_name, item_price: product.item_price, category: product.category ?? i.category ?? null, quantity: i.quantity + 1, checked: false }
+            : i);
+        }
+        return [...current, {
+          item_code: product.item_code,
+          item_name: product.item_name,
+          item_price: product.item_price,
+          category: product.category ?? null,
+          quantity: 1,
+          checked: false,
+        }];
       });
     } finally {
       setShoppingPendingCode(null);
@@ -576,11 +587,15 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                               {(() => { const cartItem = shoppingList.find(i => i.item_code === p.item_code); return cartItem ? (
                                 <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
                                   <button type="button" onClick={e => { e.stopPropagation(); void decrementCart(p); }} disabled={shoppingPendingCode === p.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הפחת כמות">−</button>
-                                  <span className="flex-1 text-center text-sm font-bold tabular-nums">{cartItem.quantity}</span>
+                                  <span className="flex min-w-[1.75rem] items-center justify-center text-center text-sm font-bold tabular-nums">
+                                    {shoppingPendingCode === p.item_code ? <InlineSpinner /> : cartItem.quantity}
+                                  </span>
                                   <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
                                 </div>
                               ) : (
-                                <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className={`h-8 w-8 rounded-lg border text-sm transition-colors border-gray-200 bg-white text-gray-400 hover:border-green-600 hover:text-green-600 ${shoppingPendingCode === p.item_code ? "cursor-wait opacity-60" : ""}`} aria-label="הוספה לרשימת קניות">🛒</button>
+                                <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className={`h-8 w-8 rounded-lg border text-sm transition-colors border-gray-200 bg-white text-gray-400 hover:border-green-600 hover:text-green-600 ${shoppingPendingCode === p.item_code ? "cursor-wait opacity-60" : ""}`} aria-label="הוספה לרשימת קניות">
+                                  {shoppingPendingCode === p.item_code ? <InlineSpinner /> : "🛒"}
+                                </button>
                               ); })()}
                             </div>
                             <div className="min-w-0">
@@ -655,11 +670,15 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                         {(() => { const cartItem = shoppingList.find(i => i.item_code === p.item_code); return cartItem ? (
                           <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
                             <button type="button" onClick={e => { e.stopPropagation(); void decrementCart(p); }} disabled={shoppingPendingCode === p.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הפחת כמות">−</button>
-                            <span className="flex-1 text-center text-sm font-bold tabular-nums">{cartItem.quantity}</span>
+                            <span className="flex min-w-[1.75rem] items-center justify-center text-center text-sm font-bold tabular-nums">
+                              {shoppingPendingCode === p.item_code ? <InlineSpinner /> : cartItem.quantity}
+                            </span>
                             <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
                           </div>
                         ) : (
-                          <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className={`h-8 w-8 rounded-lg border text-sm transition-colors border-gray-200 bg-white text-gray-400 hover:border-green-600 hover:text-green-600 ${shoppingPendingCode === p.item_code ? "cursor-wait opacity-60" : ""}`} aria-label="הוספה לרשימת קניות">🛒</button>
+                          <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className={`h-8 w-8 rounded-lg border text-sm transition-colors border-gray-200 bg-white text-gray-400 hover:border-green-600 hover:text-green-600 ${shoppingPendingCode === p.item_code ? "cursor-wait opacity-60" : ""}`} aria-label="הוספה לרשימת קניות">
+                            {shoppingPendingCode === p.item_code ? <InlineSpinner /> : "🛒"}
+                          </button>
                         ); })()}
                       </div>
                       <div className="min-w-0 flex-1">
@@ -741,6 +760,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
           <ShoppingListView
             household={household}
             householdPending={householdPending}
+            shoppingPendingCode={shoppingPendingCode}
             items={shoppingList}
             status={status}
             onToggleChecked={toggleChecked}
@@ -775,6 +795,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
           itemCodes={itemCodes}
           formatCurrency={formatCurrency}
           shoppingList={shoppingList}
+          shoppingPendingCode={shoppingPendingCode}
           onAddToCart={(item) => addToCart({ item_code: item.item_code, item_name: item.item_name, item_price: item.item_price, is_available: item.is_available })}
           onDecrementCart={(item) => decrementCart({ item_code: item.item_code })}
           positiveNumber={positiveNumber}
@@ -801,6 +822,7 @@ function TabBtn({ children, active, onClick }: { children: React.ReactNode; acti
 function ShoppingListView({
   household,
   householdPending,
+  shoppingPendingCode,
   items,
   status,
   onToggleChecked,
@@ -813,6 +835,7 @@ function ShoppingListView({
 }: {
   household: HouseholdInfo | null;
   householdPending: boolean;
+  shoppingPendingCode: string | null;
   items: ShoppingListItem[];
   status: string;
   onToggleChecked: (item: ShoppingListItem) => void;
@@ -882,7 +905,7 @@ function ShoppingListView({
           <div key={`unchecked-${categoryName}`} className="space-y-2">
             <p className="px-1 pt-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{categoryName}</p>
             {categoryItems.map(item => (
-              <ShoppingListRow key={item.item_code} item={item} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} />
+              <ShoppingListRow key={item.item_code} item={item} shoppingPendingCode={shoppingPendingCode} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} />
             ))}
           </div>
         ))}
@@ -893,7 +916,7 @@ function ShoppingListView({
               <div key={`checked-${categoryName}`} className="space-y-2">
                 <p className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-300">{categoryName}</p>
                 {categoryItems.map(item => (
-                  <ShoppingListRow key={item.item_code} item={item} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} />
+                  <ShoppingListRow key={item.item_code} item={item} shoppingPendingCode={shoppingPendingCode} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} />
                 ))}
               </div>
             ))}
@@ -989,6 +1012,7 @@ function HouseholdPanel({
 
 function ShoppingListRow({
   item,
+  shoppingPendingCode,
   promoLabel,
   onToggle,
   onAdd,
@@ -996,6 +1020,7 @@ function ShoppingListRow({
   onRemove,
 }: {
   item: ShoppingListItem;
+  shoppingPendingCode: string | null;
   promoLabel?: string;
   onToggle: (item: ShoppingListItem) => void;
   onAdd: (item: ShoppingListItem) => void;
@@ -1027,8 +1052,10 @@ function ShoppingListRow({
       <div className="flex flex-col items-end gap-1">
         <div className={`flex items-center rounded-lg border overflow-hidden ${item.checked ? "border-gray-200 text-gray-300" : "border-green-600 text-green-700"}`}>
           <button type="button" onClick={() => onDecrement(item)} className="h-7 w-6 text-sm leading-none hover:bg-green-50 transition-colors" aria-label="הפחת כמות">−</button>
-          <span className="min-w-[1.25rem] text-center text-sm font-bold tabular-nums">{item.quantity}</span>
-          <button type="button" onClick={() => onAdd(item)} className="h-7 w-6 text-sm leading-none hover:bg-green-50 transition-colors" aria-label="הוסף כמות">+</button>
+          <span className="flex min-w-[1.25rem] items-center justify-center text-center text-sm font-bold tabular-nums">
+            {shoppingPendingCode === item.item_code ? <InlineSpinner /> : item.quantity}
+          </span>
+          <button type="button" onClick={() => onAdd(item)} disabled={shoppingPendingCode === item.item_code} className="h-7 w-6 text-sm leading-none hover:bg-green-50 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
         </div>
         <p className={`text-xs font-bold whitespace-nowrap tabular-nums ${item.checked ? "text-gray-300" : "text-green-700"}`} dir="ltr">
           ₪{(item.item_price * item.quantity).toFixed(2)}
@@ -1146,6 +1173,7 @@ function PromoModal({
   formatCurrency,
   positiveNumber,
   shoppingList,
+  shoppingPendingCode,
   onAddToCart,
   onDecrementCart,
 }: {
@@ -1155,6 +1183,7 @@ function PromoModal({
   formatCurrency: (value: number | string) => string;
   positiveNumber: (value: string) => number | null;
   shoppingList: ShoppingListItem[];
+  shoppingPendingCode: string | null;
   onAddToCart: (item: PromoOriginalItem) => void;
   onDecrementCart: (item: PromoOriginalItem) => void;
 }) {
@@ -1215,11 +1244,15 @@ function PromoModal({
                       {cartItem ? (
                         <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
                           <button onClick={() => onDecrementCart(item)} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors" aria-label="הפחת כמות">−</button>
-                          <span className="min-w-[1.25rem] text-center text-sm font-bold tabular-nums">{cartItem.quantity}</span>
-                          <button onClick={() => onAddToCart(item)} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors" aria-label="הוסף כמות">+</button>
+                          <span className="flex min-w-[1.25rem] items-center justify-center text-center text-sm font-bold tabular-nums">
+                            {shoppingPendingCode === item.item_code ? <InlineSpinner /> : cartItem.quantity}
+                          </span>
+                          <button onClick={() => onAddToCart(item)} disabled={shoppingPendingCode === item.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
                         </div>
                       ) : (
-                        <button onClick={() => onAddToCart(item)} className="h-8 w-8 flex-shrink-0 rounded-lg border border-gray-200 bg-white text-sm text-gray-400 hover:border-green-600 hover:text-green-600 transition-colors" aria-label="הוספה לרשימת קניות">🛒</button>
+                        <button onClick={() => onAddToCart(item)} disabled={shoppingPendingCode === item.item_code} className={`h-8 w-8 flex-shrink-0 rounded-lg border border-gray-200 bg-white text-sm text-gray-400 hover:border-green-600 hover:text-green-600 transition-colors ${shoppingPendingCode === item.item_code ? "cursor-wait opacity-60" : ""}`} aria-label="הוספה לרשימת קניות">
+                          {shoppingPendingCode === item.item_code ? <InlineSpinner /> : "🛒"}
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1258,6 +1291,10 @@ function LoadingSpinner() {
       />
     </div>
   );
+}
+
+function InlineSpinner() {
+  return <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent align-middle" aria-hidden="true" />;
 }
 
 function Th({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {

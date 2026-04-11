@@ -13,7 +13,7 @@ export async function GET() {
   const household = await getOrCreateCurrentHousehold(user);
 
   const result = await db.execute({
-    sql: `SELECT item_code, item_name, item_price, quantity, checked
+    sql: `SELECT item_code, item_name, item_price, category, quantity, checked
           FROM shopping_list_items WHERE household_id = ? ORDER BY created_at ASC`,
     args: [household.householdId],
   });
@@ -24,7 +24,7 @@ export async function GET() {
     item_price: Number(row.item_price ?? 0),
     quantity: Number(row.quantity ?? 1),
     checked: row.checked === 1 || row.checked === true,
-    category: null as string | null,
+    category: row.category == null ? null : String(row.category),
     promo_label: null as string | null,
   }));
 
@@ -50,7 +50,7 @@ export async function GET() {
       );
     }
     for (const item of items) {
-      item.category = categoryByCode.get(item.item_code) ?? null;
+      item.category = categoryByCode.get(item.item_code) ?? item.category ?? null;
     }
 
     const conditions = itemCodes.map(() => "item_codes LIKE ?").join(" OR ");
@@ -88,27 +88,29 @@ export async function POST(request: Request) {
   const household = await getOrCreateCurrentHousehold(user);
 
   const body = await request.json().catch(() => null) as {
-    itemCode?: unknown; itemName?: unknown; itemPrice?: unknown;
+    itemCode?: unknown; itemName?: unknown; itemPrice?: unknown; itemCategory?: unknown;
   } | null;
 
   const itemCode = typeof body?.itemCode === "string" ? body.itemCode.trim() : "";
   const itemName = typeof body?.itemName === "string" ? body.itemName.trim() : "";
   const itemPrice = typeof body?.itemPrice === "number" ? body.itemPrice : 0;
+  const itemCategory = typeof body?.itemCategory === "string" ? body.itemCategory.trim() : "";
 
   if (!itemCode) {
     return Response.json({ error: "itemCode is required" }, { status: 400 });
   }
 
   await db.execute({
-    sql: `INSERT INTO shopping_list_items (household_id, item_code, item_name, item_price, quantity, checked, added_by_user_id, created_at, updated_at)
-          VALUES (?, ?, ?, ?, 1, 0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    sql: `INSERT INTO shopping_list_items (household_id, item_code, item_name, item_price, category, quantity, checked, added_by_user_id, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 1, 0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           ON CONFLICT (household_id, item_code) DO UPDATE SET
             item_name = EXCLUDED.item_name,
             item_price = EXCLUDED.item_price,
+            category = COALESCE(EXCLUDED.category, shopping_list_items.category),
             quantity = shopping_list_items.quantity + 1,
             checked = 0,
             updated_at = CURRENT_TIMESTAMP`,
-    args: [household.householdId, itemCode, itemName, itemPrice, user.userId],
+    args: [household.householdId, itemCode, itemName, itemPrice, itemCategory || null, user.userId],
   });
 
   return Response.json({ ok: true });

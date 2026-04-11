@@ -58,6 +58,7 @@ export async function ensureHouseholdSchema() {
             item_code TEXT NOT NULL,
             item_name TEXT,
             item_price REAL,
+            category TEXT,
             quantity INTEGER DEFAULT 1,
             checked INTEGER DEFAULT 0,
             added_by_user_id TEXT,
@@ -65,6 +66,10 @@ export async function ensureHouseholdSchema() {
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (household_id, item_code)
           )`,
+  });
+
+  await db.execute({
+    sql: `ALTER TABLE shopping_list_items ADD COLUMN IF NOT EXISTS category TEXT`,
   });
 
   await db.execute({
@@ -188,7 +193,7 @@ export async function joinHouseholdByInviteCode(user: SessionUser, inviteCodeRaw
     }
 
     const currentCart = await db.execute({
-      sql: `SELECT item_code, item_name, item_price, quantity, checked, created_at, added_by_user_id
+      sql: `SELECT item_code, item_name, item_price, category, quantity, checked, created_at, added_by_user_id
             FROM shopping_list_items
             WHERE household_id = ?`,
       args: [current.householdId],
@@ -197,11 +202,12 @@ export async function joinHouseholdByInviteCode(user: SessionUser, inviteCodeRaw
     for (const row of currentCart.rows) {
       await db.execute({
         sql: `INSERT INTO shopping_list_items
-                (household_id, item_code, item_name, item_price, quantity, checked, added_by_user_id, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
+                (household_id, item_code, item_name, item_price, category, quantity, checked, added_by_user_id, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
               ON CONFLICT (household_id, item_code) DO UPDATE SET
                 item_name = EXCLUDED.item_name,
                 item_price = EXCLUDED.item_price,
+                category = COALESCE(EXCLUDED.category, shopping_list_items.category),
                 quantity = shopping_list_items.quantity + EXCLUDED.quantity,
                 checked = CASE WHEN shopping_list_items.checked = 1 AND EXCLUDED.checked = 1 THEN 1 ELSE 0 END,
                 updated_at = CURRENT_TIMESTAMP`,
@@ -210,6 +216,7 @@ export async function joinHouseholdByInviteCode(user: SessionUser, inviteCodeRaw
           String(row.item_code ?? ""),
           String(row.item_name ?? ""),
           Number(row.item_price ?? 0),
+          row.category == null ? null : String(row.category),
           Math.max(1, Number(row.quantity ?? 1)),
           row.checked === 1 || row.checked === true ? 1 : 0,
           String(row.added_by_user_id ?? user.userId),
