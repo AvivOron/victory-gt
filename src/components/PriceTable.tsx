@@ -843,19 +843,18 @@ function ShoppingListView({
   if (items.length === 0) {
     return (
       <div className="space-y-4">
-        <HouseholdPanel household={household} pending={householdPending} onJoin={onJoinHousehold} />
         <div className="rounded-lg border border-gray-200 bg-white px-5 py-16 text-center text-gray-400 shadow-sm">
           <p className="text-4xl mb-3">🛒</p>
           <p className="text-lg font-semibold text-[#171717]">רשימת הקניות ריקה</p>
           <p className="mt-1 text-sm">לחץ על 🛒 ליד מוצר כדי להוסיף אותו</p>
         </div>
+        <HouseholdPanel household={household} pending={householdPending} onJoin={onJoinHousehold} />
       </div>
     );
   }
 
   return (
     <div>
-      <HouseholdPanel household={household} pending={householdPending} onJoin={onJoinHousehold} />
       <div className="mb-3 flex items-center justify-between px-1" dir="rtl">
         <p className="text-sm text-gray-500">
           {unchecked.length} פריטים נותרו · סה״כ משוער{" "}
@@ -881,6 +880,9 @@ function ShoppingListView({
             ))}
           </>
         )}
+      </div>
+      <div className="mt-6">
+        <HouseholdPanel household={household} pending={householdPending} onJoin={onJoinHousehold} />
       </div>
     </div>
   );
