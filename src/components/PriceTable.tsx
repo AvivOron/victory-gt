@@ -46,6 +46,19 @@ interface ShoppingListResponse {
   items: ShoppingListItem[];
 }
 
+interface HouseholdInfo {
+  householdId: string;
+  householdName: string;
+  inviteCode: string;
+  role: string;
+  memberCount: number;
+}
+
+interface HouseholdResponse {
+  household: HouseholdInfo;
+  error?: string;
+}
+
 interface CategoryOption {
   name: string;
   total: number;
@@ -87,6 +100,8 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   const [favouritePendingCode, setFavouritePendingCode] = useState<string | null>(null);
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
   const [shoppingPendingCode, setShoppingPendingCode] = useState<string | null>(null);
+  const [household, setHousehold] = useState<HouseholdInfo | null>(null);
+  const [householdPending, setHouseholdPending] = useState(false);
   const [cartWarning, setCartWarning] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
@@ -148,6 +163,26 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   useEffect(() => {
     fetchShoppingList();
   }, [fetchShoppingList]);
+
+  const fetchHousehold = useCallback(async () => {
+    if (status !== "authenticated") {
+      setHousehold(null);
+      return;
+    }
+
+    try {
+      const res = await fetch("/victory-gt/api/household", { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to load household");
+      const data: HouseholdResponse = await res.json();
+      setHousehold(data.household);
+    } catch {
+      setHousehold(null);
+    }
+  }, [status]);
+
+  useEffect(() => {
+    fetchHousehold();
+  }, [fetchHousehold]);
 
   useEffect(() => {
     if (!cartWarning) return;
@@ -346,18 +381,6 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     });
   }, []);
 
-  const clearChecked = useCallback(async () => {
-    const checkedItems = shoppingList.filter(i => i.checked);
-    setShoppingList(current => current.filter(i => !i.checked));
-    await Promise.all(checkedItems.map(item =>
-      fetch("/victory-gt/api/shopping-list", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemCode: item.item_code }),
-      })
-    ));
-  }, [shoppingList]);
-
   const resetCart = useCallback(async () => {
     const all = shoppingList;
     setShoppingList([]);
@@ -369,6 +392,39 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
       })
     ));
   }, [shoppingList]);
+
+  const joinHousehold = useCallback(async (inviteCode: string) => {
+    if (status !== "authenticated") {
+      promptGoogleSignIn();
+      return;
+    }
+
+    setHouseholdPending(true);
+    try {
+      const res = await fetch("/victory-gt/api/household", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inviteCode }),
+      });
+
+      const data: HouseholdResponse = await res.json();
+      if (res.status === 401) {
+        promptGoogleSignIn();
+        return;
+      }
+      if (!res.ok) throw new Error(data.error || "Failed to join household");
+
+      setHousehold(data.household);
+      await fetchShoppingList();
+      if (typeof window !== "undefined") window.alert("העגלה המשותפת חוברה בהצלחה");
+    } catch (error) {
+      if (typeof window !== "undefined") {
+        window.alert(error instanceof Error ? error.message : "Failed to join household");
+      }
+    } finally {
+      setHouseholdPending(false);
+    }
+  }, [fetchShoppingList, promptGoogleSignIn, status]);
 
   return (
     <>
@@ -682,6 +738,8 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
 
         {tab === "shopping" && (
           <ShoppingListView
+            household={household}
+            householdPending={householdPending}
             items={shoppingList}
             status={status}
             onToggleChecked={toggleChecked}
@@ -695,9 +753,9 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                 body: JSON.stringify({ itemCode: item.item_code, force: true }),
               });
             }}
-            onClearChecked={clearChecked}
             onResetCart={resetCart}
             onSignIn={promptGoogleSignIn}
+            onJoinHousehold={joinHousehold}
           />
         )}
       </div>
@@ -740,25 +798,29 @@ function TabBtn({ children, active, onClick }: { children: React.ReactNode; acti
 }
 
 function ShoppingListView({
+  household,
+  householdPending,
   items,
   status,
   onToggleChecked,
   onAdd,
   onDecrement,
   onRemove,
-  onClearChecked,
   onResetCart,
   onSignIn,
+  onJoinHousehold,
 }: {
+  household: HouseholdInfo | null;
+  householdPending: boolean;
   items: ShoppingListItem[];
   status: string;
   onToggleChecked: (item: ShoppingListItem) => void;
   onAdd: (item: ShoppingListItem) => void;
   onDecrement: (item: ShoppingListItem) => void;
   onRemove: (item: ShoppingListItem) => void;
-  onClearChecked: () => void;
   onResetCart: () => void;
   onSignIn: () => void;
+  onJoinHousehold: (inviteCode: string) => void | Promise<void>;
 }) {
   if (status !== "authenticated") {
     return (
@@ -780,16 +842,20 @@ function ShoppingListView({
 
   if (items.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white px-5 py-16 text-center text-gray-400 shadow-sm">
-        <p className="text-4xl mb-3">🛒</p>
-        <p className="text-lg font-semibold text-[#171717]">רשימת הקניות ריקה</p>
-        <p className="mt-1 text-sm">לחץ על 🛒 ליד מוצר כדי להוסיף אותו</p>
+      <div className="space-y-4">
+        <HouseholdPanel household={household} pending={householdPending} onJoin={onJoinHousehold} />
+        <div className="rounded-lg border border-gray-200 bg-white px-5 py-16 text-center text-gray-400 shadow-sm">
+          <p className="text-4xl mb-3">🛒</p>
+          <p className="text-lg font-semibold text-[#171717]">רשימת הקניות ריקה</p>
+          <p className="mt-1 text-sm">לחץ על 🛒 ליד מוצר כדי להוסיף אותו</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div>
+      <HouseholdPanel household={household} pending={householdPending} onJoin={onJoinHousehold} />
       <div className="mb-3 flex items-center justify-between px-1" dir="rtl">
         <p className="text-sm text-gray-500">
           {unchecked.length} פריטים נותרו · סה״כ משוער{" "}
@@ -816,6 +882,86 @@ function ShoppingListView({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function HouseholdPanel({
+  household,
+  pending,
+  onJoin,
+}: {
+  household: HouseholdInfo | null;
+  pending: boolean;
+  onJoin: (inviteCode: string) => void | Promise<void>;
+}) {
+  const [inviteCode, setInviteCode] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = useCallback(async () => {
+    if (!household?.inviteCode) return;
+
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(household.inviteCode);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+        return;
+      }
+    } catch {
+      // Fall back to alert below.
+    }
+
+    if (typeof window !== "undefined") window.alert(`קוד השיתוף שלך: ${household.inviteCode}`);
+  }, [household]);
+
+  return (
+    <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-[#171717]">עגלה משותפת</p>
+          <p className="mt-1 text-xs text-gray-500">
+            {household ? `${household.memberCount} חברים במשק הבית` : "טוען פרטי שיתוף..."}
+          </p>
+        </div>
+        {household && (
+          <div className="flex items-center gap-2" dir="ltr">
+            <span className="rounded-lg border border-gray-200 bg-[#f7f8fa] px-3 py-2 text-sm font-bold tracking-[0.2em] text-[#171717]">
+              {household.inviteCode}
+            </span>
+            <button
+              type="button"
+              onClick={() => { void copyCode(); }}
+              className="h-10 rounded-lg border border-gray-200 px-3 text-xs font-semibold text-gray-600 transition-colors hover:border-[#e31837] hover:text-[#e31837]"
+            >
+              {copied ? "הועתק" : "העתק קוד"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <input
+          type="text"
+          value={inviteCode}
+          onChange={event => setInviteCode(event.target.value.toUpperCase())}
+          placeholder="הזינו קוד שיתוף"
+          className="h-10 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold tracking-[0.2em] text-[#171717] focus:border-[#e31837] focus:outline-none focus:ring-2 focus:ring-[#e31837]/15"
+          dir="ltr"
+        />
+        <button
+          type="button"
+          disabled={pending || !inviteCode.trim()}
+          onClick={() => {
+            void onJoin(inviteCode.trim());
+            setInviteCode("");
+          }}
+          className={`h-10 rounded-lg bg-[#171717] px-4 text-sm font-bold text-white transition-colors hover:bg-[#2a2a2a] ${pending ? "cursor-wait opacity-60" : ""}`}
+        >
+          הצטרף לעגלה
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-gray-400">שתף את הקוד עם בני ביתך כדי שכולכם תראו ותעדכנו את אותה עגלה.</p>
     </div>
   );
 }

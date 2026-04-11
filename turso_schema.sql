@@ -54,6 +54,25 @@ CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_promos_branch   ON promos(branch_id);
 CREATE INDEX IF NOT EXISTS idx_favourites_user_branch ON favourites(user_id, branch_id, created_at);
 
+CREATE TABLE IF NOT EXISTS households (
+  household_id        TEXT PRIMARY KEY,
+  name                TEXT NOT NULL,
+  invite_code         TEXT NOT NULL UNIQUE,
+  created_by_user_id  TEXT,
+  created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS household_members (
+  household_id TEXT NOT NULL,
+  user_id      TEXT NOT NULL,
+  user_email   TEXT,
+  role         TEXT NOT NULL DEFAULT 'member',
+  joined_at    TEXT DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (household_id, user_id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_household_members_user ON household_members(user_id);
+
 CREATE TABLE IF NOT EXISTS shopping_list (
   user_id    TEXT,
   user_email TEXT,
@@ -67,3 +86,18 @@ CREATE TABLE IF NOT EXISTS shopping_list (
 );
 
 CREATE INDEX IF NOT EXISTS idx_shopping_list_user ON shopping_list(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS shopping_list_items (
+  household_id     TEXT NOT NULL,
+  item_code        TEXT NOT NULL,
+  item_name        TEXT,
+  item_price       REAL,
+  quantity         INTEGER DEFAULT 1,
+  checked          INTEGER DEFAULT 0,
+  added_by_user_id TEXT,
+  created_at       TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at       TEXT DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (household_id, item_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_shopping_list_items_household ON shopping_list_items(household_id, created_at);

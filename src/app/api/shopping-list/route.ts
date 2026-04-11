@@ -1,13 +1,7 @@
 import { db } from "@/lib/db";
 import { getServerSession } from "next-auth";
-import type { Session } from "next-auth";
 import { authOptions } from "@/lib/auth";
-
-function getSessionUser(session: Session | null) {
-  const user = session?.user as { id?: string | null; email?: string | null } | undefined;
-  const userId = user?.id ?? user?.email;
-  return userId ? { userId, email: user?.email ?? null } : null;
-}
+import { getOrCreateCurrentHousehold, getSessionUser } from "@/lib/households";
 
 const BRANCH = process.env.GANEI_TIKVA_BRANCH_ID || "";
 
@@ -16,11 +10,12 @@ export async function GET() {
   const user = getSessionUser(session);
 
   if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
+  const household = await getOrCreateCurrentHousehold(user);
 
   const result = await db.execute({
     sql: `SELECT item_code, item_name, item_price, quantity, checked
-          FROM shopping_list WHERE user_id = ? ORDER BY created_at ASC`,
-    args: [user.userId],
+          FROM shopping_list_items WHERE household_id = ? ORDER BY created_at ASC`,
+    args: [household.householdId],
   });
 
   const items = result.rows.map(row => ({
@@ -35,7 +30,7 @@ export async function GET() {
   // Fetch active promos for cart item codes
   if (items.length > 0) {
     const itemCodes = items.map(i => i.item_code);
-    const conditions = itemCodes.map(code => `item_codes LIKE ?`).join(" OR ");
+    const conditions = itemCodes.map(() => "item_codes LIKE ?").join(" OR ");
     const args: string[] = itemCodes.map(code => `%"${code}"%`);
     if (BRANCH) args.push(BRANCH);
     const promoResult = await db.execute({
@@ -67,6 +62,7 @@ export async function POST(request: Request) {
   const user = getSessionUser(session);
 
   if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
+  const household = await getOrCreateCurrentHousehold(user);
 
   const body = await request.json().catch(() => null) as {
     itemCode?: unknown; itemName?: unknown; itemPrice?: unknown;
@@ -81,14 +77,15 @@ export async function POST(request: Request) {
   }
 
   await db.execute({
-    sql: `INSERT INTO shopping_list (user_id, user_email, item_code, item_name, item_price, quantity, checked, created_at)
-          VALUES (?, ?, ?, ?, ?, 1, 0, CURRENT_TIMESTAMP)
-          ON CONFLICT (user_id, item_code) DO UPDATE SET
+    sql: `INSERT INTO shopping_list_items (household_id, item_code, item_name, item_price, quantity, checked, added_by_user_id, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 1, 0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          ON CONFLICT (household_id, item_code) DO UPDATE SET
             item_name = EXCLUDED.item_name,
             item_price = EXCLUDED.item_price,
-            quantity = shopping_list.quantity + 1,
-            checked = 0`,
-    args: [user.userId, user.email, itemCode, itemName, itemPrice],
+            quantity = shopping_list_items.quantity + 1,
+            checked = 0,
+            updated_at = CURRENT_TIMESTAMP`,
+    args: [household.householdId, itemCode, itemName, itemPrice, user.userId],
   });
 
   return Response.json({ ok: true });
@@ -99,6 +96,7 @@ export async function DELETE(request: Request) {
   const user = getSessionUser(session);
 
   if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
+  const household = await getOrCreateCurrentHousehold(user);
 
   const body = await request.json().catch(() => null) as { itemCode?: unknown; force?: unknown } | null;
   const itemCode = typeof body?.itemCode === "string" ? body.itemCode.trim() : "";
@@ -110,17 +108,17 @@ export async function DELETE(request: Request) {
 
   if (force) {
     await db.execute({
-      sql: "DELETE FROM shopping_list WHERE user_id = ? AND item_code = ?",
-      args: [user.userId, itemCode],
+      sql: "DELETE FROM shopping_list_items WHERE household_id = ? AND item_code = ?",
+      args: [household.householdId, itemCode],
     });
   } else {
     await db.execute({
-      sql: `UPDATE shopping_list SET quantity = quantity - 1 WHERE user_id = ? AND item_code = ?`,
-      args: [user.userId, itemCode],
+      sql: `UPDATE shopping_list_items SET quantity = quantity - 1, updated_at = CURRENT_TIMESTAMP WHERE household_id = ? AND item_code = ?`,
+      args: [household.householdId, itemCode],
     });
     await db.execute({
-      sql: "DELETE FROM shopping_list WHERE user_id = ? AND item_code = ? AND quantity <= 0",
-      args: [user.userId, itemCode],
+      sql: "DELETE FROM shopping_list_items WHERE household_id = ? AND item_code = ? AND quantity <= 0",
+      args: [household.householdId, itemCode],
     });
   }
 
@@ -133,6 +131,7 @@ export async function PATCH(request: Request) {
   const user = getSessionUser(session);
 
   if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
+  const household = await getOrCreateCurrentHousehold(user);
 
   const body = await request.json().catch(() => null) as {
     itemCode?: unknown; checked?: unknown;
@@ -146,8 +145,8 @@ export async function PATCH(request: Request) {
   }
 
   await db.execute({
-    sql: "UPDATE shopping_list SET checked = ? WHERE user_id = ? AND item_code = ?",
-    args: [checked, user.userId, itemCode],
+    sql: "UPDATE shopping_list_items SET checked = ?, updated_at = CURRENT_TIMESTAMP WHERE household_id = ? AND item_code = ?",
+    args: [checked, household.householdId, itemCode],
   });
 
   return Response.json({ ok: true });
