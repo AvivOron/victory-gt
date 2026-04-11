@@ -1326,9 +1326,11 @@ function BarcodeScannerModal({
             <p className="text-sm font-bold">סריקת ברקוד</p>
             <p className="text-xs text-white/70">{status}</p>
           </div>
-          <button type="button" onClick={onClose} className="h-10 w-10 rounded-full border border-white/20 text-lg leading-none text-white">
-            ×
-          </button>
+          {cameraActive && (
+            <button type="button" onClick={onClose} className="h-10 w-10 rounded-full border border-white/20 text-lg leading-none text-white">
+              ×
+            </button>
+          )}
         </div>
 
         {(cameraActive || !product) && (
@@ -1448,7 +1450,16 @@ function BarcodeScannerModal({
               <button type="button" onClick={onRetry} className="mt-3 w-full rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600">
                 סרוק מוצר נוסף
               </button>
+              <button type="button" onClick={onClose} className="mt-3 w-full rounded-lg bg-[#171717] px-4 py-2 text-sm font-bold text-white">
+                סגור
+              </button>
             </div>
+          )}
+
+          {!cameraActive && !product && (
+            <button type="button" onClick={onClose} className="mt-4 w-full rounded-lg bg-white px-4 py-2 text-sm font-bold text-[#171717]">
+              סגור
+            </button>
           )}
         </div>
       </div>
