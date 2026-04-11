@@ -24,6 +24,7 @@ export interface Product {
   discount_promos?: Promo[];
   branch_id: string;
   last_updated: string;
+  is_available: boolean;
 }
 
 export interface Promo {
@@ -47,6 +48,7 @@ export interface PromoOriginalItem {
   item_name: string;
   item_price: number;
   category?: string;
+  is_available?: boolean;
 }
 
 export interface Branch {

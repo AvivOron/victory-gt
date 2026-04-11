@@ -87,6 +87,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   const [favouritePendingCode, setFavouritePendingCode] = useState<string | null>(null);
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
   const [shoppingPendingCode, setShoppingPendingCode] = useState<string | null>(null);
+  const [cartWarning, setCartWarning] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   // Debounce search
@@ -147,6 +148,13 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   useEffect(() => {
     fetchShoppingList();
   }, [fetchShoppingList]);
+
+  useEffect(() => {
+    if (!cartWarning) return;
+
+    const timeoutId = window.setTimeout(() => setCartWarning(null), 3000);
+    return () => window.clearTimeout(timeoutId);
+  }, [cartWarning]);
 
   // Fetch products
   const fetchProducts = useCallback(async () => {
@@ -279,8 +287,15 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     }
   }, [favouriteCodes, promptGoogleSignIn, status]);
 
-  const addToCart = useCallback(async (product: { item_code: string; item_name: string; item_price: number }) => {
+  const addToCart = useCallback(async (product: { item_code: string; item_name: string; item_price: number; is_available?: boolean }) => {
+    if (product.is_available === false) {
+      const message = "This product is currently out of stock.";
+      setCartWarning(message);
+      if (typeof window !== "undefined") window.alert(message);
+      return;
+    }
     if (status !== "authenticated") { promptGoogleSignIn(); return; }
+    setCartWarning(null);
     setShoppingPendingCode(product.item_code);
     try {
       const res = await fetch("/victory-gt/api/shopping-list", {
@@ -433,6 +448,14 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
               </div>
             ) : (
               <>
+            {cartWarning && (
+              <div
+                role="alert"
+                className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 shadow-sm"
+              >
+                {cartWarning}
+              </div>
+            )}
             <p className="text-xs text-gray-500 mb-2 px-1">
               מציג {((page - 1) * PAGE_SIZE + 1).toLocaleString()}–{Math.min(page * PAGE_SIZE, total).toLocaleString()} מתוך {total.toLocaleString()} {tab === "favourites" ? "מועדפים" : "מוצרים"}
               {(debouncedSearch || category) && " (סינון פעיל)"}
@@ -466,11 +489,12 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                       <tr><td colSpan={6} className="text-center py-16 text-gray-400">לא נמצאו מוצרים</td></tr>
                     ) : products.map((p, i) => {
                       const hasDiscount = (p.discount_promos?.length ?? 0) > 0;
+                      const unavailable = p.is_available === false;
                       return (
                       <tr
                         key={p.item_code + i}
                         onClick={hasDiscount ? () => setSelectedProduct(p) : undefined}
-                        className={`border-b border-gray-100 transition-colors hover:bg-red-50/70 ${hasDiscount ? "cursor-pointer" : ""} ${i % 2 === 1 ? "bg-[#fafafa]" : "bg-white"}`}
+                        className={`border-b border-gray-100 transition-colors hover:bg-red-50/70 ${hasDiscount ? "cursor-pointer" : ""} ${i % 2 === 1 ? "bg-[#fafafa]" : "bg-white"} ${unavailable ? "opacity-40" : ""}`}
                       >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
@@ -544,11 +568,12 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                 <div className="text-center py-16 text-gray-400">לא נמצאו מוצרים</div>
               ) : products.map((p, i) => {
                 const hasDiscount = (p.discount_promos?.length ?? 0) > 0;
+                const unavailable = p.is_available === false;
                 return (
                 <div
                   key={p.item_code + i}
                   onClick={hasDiscount ? () => setSelectedProduct(p) : undefined}
-                  className={`flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-colors ${hasDiscount ? "cursor-pointer hover:bg-red-50/70" : ""}`}
+                  className={`flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-colors ${hasDiscount ? "cursor-pointer hover:bg-red-50/70" : ""} ${unavailable ? "opacity-40" : ""}`}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start gap-2">
@@ -691,7 +716,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
           itemCodes={itemCodes}
           formatCurrency={formatCurrency}
           shoppingList={shoppingList}
-          onAddToCart={(item) => addToCart({ item_code: item.item_code, item_name: item.item_name, item_price: item.item_price })}
+          onAddToCart={(item) => addToCart({ item_code: item.item_code, item_name: item.item_name, item_price: item.item_price, is_available: item.is_available })}
           onDecrementCart={(item) => decrementCart({ item_code: item.item_code })}
           positiveNumber={positiveNumber}
         />
@@ -1010,10 +1035,10 @@ function PromoModal({
             {originalItems.map(item => {
               const originalMinPrice = minQty ? Number(item.item_price) * minQty : null;
               const savings = originalMinPrice && discountedPrice ? originalMinPrice - discountedPrice : null;
-
+              const unavailable = item.is_available === false;
               const cartItem = shoppingList.find(i => i.item_code === item.item_code);
               return (
-                <div key={item.item_code} className="rounded-lg border border-gray-200 bg-[#fafafa] p-3">
+                <div key={item.item_code} className={`rounded-lg border border-gray-200 bg-[#fafafa] p-3 ${unavailable ? "opacity-40" : ""}`}>
                   <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                     <p className="font-bold text-[#171717]">{item.item_name || item.item_code}</p>
                     <div className="flex items-center gap-2">
@@ -1038,6 +1063,7 @@ function PromoModal({
                     {originalMinPrice && (
                       <span>מקורי למינ׳: <strong className="text-[#171717]">{formatCurrency(originalMinPrice)}</strong></span>
                     )}
+                    {unavailable && <span className="font-semibold text-amber-800">כרגע אזל מהמלאי</span>}
                   </div>
                 </div>
               );

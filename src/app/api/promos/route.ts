@@ -24,6 +24,7 @@ interface PriceRow {
   item_name: string;
   item_price: number;
   category: string;
+  is_available: boolean;
 }
 
 interface EnrichedPromo extends PromoRow {
@@ -60,7 +61,7 @@ async function enrichPromos(promos: PromoRow[]): Promise<EnrichedPromo[]> {
     }
 
     const priceResult = await db.execute({
-      sql: `SELECT item_code,item_name,item_price,category FROM products WHERE ${productConditions.join(" AND ")}`,
+      sql: `SELECT item_code,item_name,item_price,category,COALESCE(is_available,TRUE) as is_available FROM products WHERE ${productConditions.join(" AND ")}`,
       args: productArgs,
     });
 

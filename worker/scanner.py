@@ -163,6 +163,10 @@ def ensure_schema() -> None:
         {"sql": "CREATE INDEX IF NOT EXISTS idx_products_branch ON products(branch_id)", "args": []},
         {"sql": "CREATE INDEX IF NOT EXISTS idx_promos_branch ON promos(branch_id)", "args": []},
     ])
+    # Migrate: add is_available column if it doesn't exist yet (existing DBs)
+    db_execute_ignore_errors([
+        {"sql": "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_available BOOLEAN NOT NULL DEFAULT TRUE", "args": []},
+    ])
 
 
 # ── Fetch helpers ─────────────────────────────────────────────────────────────
@@ -543,13 +547,13 @@ def upsert_products(rows: list[dict]) -> None:
         return
     log.info("Upserting %d products...", len(rows))
     stmts = [
-        {"sql": """INSERT INTO products (item_code,branch_id,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,last_updated)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        {"sql": """INSERT INTO products (item_code,branch_id,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,last_updated,is_available)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE)
                    ON CONFLICT (item_code, branch_id) DO UPDATE SET
                      item_name=EXCLUDED.item_name, item_price=EXCLUDED.item_price,
                      unit_of_measure=EXCLUDED.unit_of_measure, quantity=EXCLUDED.quantity,
                      category=EXCLUDED.category, manufacturer_name=EXCLUDED.manufacturer_name,
-                     last_updated=EXCLUDED.last_updated""",
+                     last_updated=EXCLUDED.last_updated, is_available=TRUE""",
          "args": [r["item_code"], r["branch_id"], r["item_name"], r["item_price"], r["unit_of_measure"], r["quantity"], r.get("category", DEFAULT_CATEGORY), r["manufacturer_name"], r["last_updated"]]}
         for r in rows
     ]
@@ -579,18 +583,18 @@ def upsert_promos(rows: list[dict]) -> None:
     log.info("Promos done")
 
 
-def delete_stale_products(branch_id: str, fresh_item_codes: set[str]) -> None:
+def mark_unavailable_products(branch_id: str, fresh_item_codes: set[str]) -> None:
     if not fresh_item_codes:
-        log.warning("No fresh products — skipping stale product deletion to avoid wiping DB.")
+        log.warning("No fresh products — skipping unavailability marking to avoid wiping DB.")
         return
-    existing = db_query("SELECT item_code FROM products WHERE branch_id = %s", [branch_id])
+    existing = db_query("SELECT item_code FROM products WHERE branch_id = %s AND is_available = TRUE", [branch_id])
     stale = [r["item_code"] for r in existing if r["item_code"] not in fresh_item_codes]
     if not stale:
-        log.info("No stale products to delete.")
+        log.info("No products to mark unavailable.")
         return
-    log.info("Deleting %d stale products for branch %s", len(stale), branch_id)
-    db_execute([{"sql": "DELETE FROM products WHERE branch_id = %s AND item_code = ANY(%s)", "args": [branch_id, stale]}])
-    log.info("Stale products deleted.")
+    log.info("Marking %d products unavailable for branch %s", len(stale), branch_id)
+    db_execute([{"sql": "UPDATE products SET is_available = FALSE WHERE branch_id = %s AND item_code = ANY(%s)", "args": [branch_id, stale]}])
+    log.info("Products marked unavailable.")
 
 
 def delete_stale_promos(branch_id: str, fresh_promo_ids: set[str]) -> None:
@@ -651,7 +655,7 @@ def run_scan() -> None:
     products = categorize_products(products)
     upsert_products(products)
     upsert_promos(promos)
-    delete_stale_products(branch_id, {p["item_code"] for p in products})
+    mark_unavailable_products(branch_id, {p["item_code"] for p in products})
     delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
 
     with open(LAST_FILES_CACHE, "w") as fh:
