@@ -1043,15 +1043,32 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                     className="block w-full rounded-lg border border-gray-200 border-r-4 bg-white p-4 text-right shadow-sm transition-colors hover:bg-red-50/70"
                     style={{ borderRightColor: "#e31837" }}
                   >
-                    <p className="font-bold leading-snug text-[#171717]">
-                      {promo.description || `מבצע #${promo.promotion_id}`}
-                    </p>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mt-2">
-                      {promo.discounted_price && <span>מחיר: <strong className="text-green-700">{formatCurrency(promo.discounted_price)}</strong></span>}
-                      {(positiveNumber(promo.min_qty) ?? 0) > 1 && <span>מינ׳ כמות: {promo.min_qty}</span>}
-                      {promo.max_qty && <span>מקס׳ כמות: {promo.max_qty}</span>}
-                      {positiveNumber(promo.min_purchase_amount) && <span>מינ׳ קנייה: <strong className="text-gray-700">{formatCurrency(promo.min_purchase_amount)}</strong></span>}
-                      {promo.end_date && <span className="text-xs text-gray-400">עד {String(promo.end_date).slice(0, 10)}</span>}
+                    <div className="flex items-start gap-3">
+                      {(promo.original_items ?? []).length > 0 && (
+                        <div className="flex flex-shrink-0 gap-1">
+                          {(promo.original_items ?? []).slice(0, 1).map(item => (
+                            <img
+                              key={item.item_code}
+                              src={`/victory-gt/products/${item.item_code}.jpg`}
+                              alt={item.item_name}
+                              className="h-12 w-12 rounded-md border border-gray-100 object-contain bg-white"
+                              onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold leading-snug text-[#171717]">
+                          {promo.description || `מבצע #${promo.promotion_id}`}
+                        </p>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mt-2">
+                          {promo.discounted_price && <span>מחיר: <strong className="text-green-700">{formatCurrency(promo.discounted_price)}</strong></span>}
+                          {(positiveNumber(promo.min_qty) ?? 0) > 1 && <span>מינ׳ כמות: {promo.min_qty}</span>}
+                          {promo.max_qty && <span>מקס׳ כמות: {promo.max_qty}</span>}
+                          {positiveNumber(promo.min_purchase_amount) && <span>מינ׳ קנייה: <strong className="text-gray-700">{formatCurrency(promo.min_purchase_amount)}</strong></span>}
+                          {promo.end_date && <span className="text-xs text-gray-400">עד {String(promo.end_date).slice(0, 10)}</span>}
+                        </div>
+                      </div>
                     </div>
                   </button>
                 );
@@ -1745,6 +1762,7 @@ function PromoModal({
   const minQty = positiveNumber(promo.min_qty);
   const discountedPrice = positiveNumber(promo.discounted_price);
   const originalItems = promo.original_items ?? [];
+  const [expandedImage, setExpandedImage] = useState<string | null>(null);
 
   return (
     <div
@@ -1789,35 +1807,46 @@ function PromoModal({
               const cartItem = shoppingList.find(i => i.item_code === item.item_code);
               return (
                 <div key={item.item_code} className={`rounded-lg border border-gray-200 bg-[#fafafa] p-3 ${unavailable ? "opacity-40" : ""}`}>
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                    <p className="font-bold text-[#171717]">{item.item_name || item.item_code}</p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400">
-                        ברקוד: <span dir="ltr" className="font-mono">{item.item_code}</span>
-                      </span>
-                      {cartItem ? (
-                        <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
-                          <button onClick={() => onDecrementCart(item)} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors" aria-label="הפחת כמות">−</button>
-                          <span className="flex min-w-[1.25rem] items-center justify-center text-center text-sm font-bold tabular-nums">
-                            {shoppingPendingCode === item.item_code ? <InlineSpinner /> : cartItem.quantity}
+                  <div className="flex gap-3">
+                    <img
+                      src={`/victory-gt/products/${item.item_code}.jpg`}
+                      alt={item.item_name}
+                      className={`flex-shrink-0 rounded-md border border-gray-100 object-contain bg-white cursor-pointer transition-all duration-200 ${expandedImage === item.item_code ? "h-40 w-40" : "h-16 w-16"}`}
+                      onClick={() => setExpandedImage(expandedImage === item.item_code ? null : item.item_code)}
+                      onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                        <p className="font-bold text-[#171717]">{item.item_name || item.item_code}</p>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400">
+                            ברקוד: <span dir="ltr" className="font-mono">{item.item_code}</span>
                           </span>
-                          <button onClick={() => onAddToCart(item)} disabled={shoppingPendingCode === item.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
+                          {cartItem ? (
+                            <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
+                              <button onClick={() => onDecrementCart(item)} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors" aria-label="הפחת כמות">−</button>
+                              <span className="flex min-w-[1.25rem] items-center justify-center text-center text-sm font-bold tabular-nums">
+                                {shoppingPendingCode === item.item_code ? <InlineSpinner /> : cartItem.quantity}
+                              </span>
+                              <button onClick={() => onAddToCart(item)} disabled={shoppingPendingCode === item.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => onAddToCart(item)} disabled={shoppingPendingCode === item.item_code} className={`h-8 w-8 flex-shrink-0 rounded-lg border border-gray-200 bg-white text-sm text-gray-400 hover:border-green-600 hover:text-green-600 transition-colors ${shoppingPendingCode === item.item_code ? "cursor-wait opacity-60" : ""}`} aria-label="הוספה לרשימת קניות">
+                              {shoppingPendingCode === item.item_code ? <InlineSpinner /> : "🛒"}
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <button onClick={() => onAddToCart(item)} disabled={shoppingPendingCode === item.item_code} className={`h-8 w-8 flex-shrink-0 rounded-lg border border-gray-200 bg-white text-sm text-gray-400 hover:border-green-600 hover:text-green-600 transition-colors ${shoppingPendingCode === item.item_code ? "cursor-wait opacity-60" : ""}`} aria-label="הוספה לרשימת קניות">
-                          {shoppingPendingCode === item.item_code ? <InlineSpinner /> : "🛒"}
-                        </button>
-                      )}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
+                        {promo.discount_rate && <span>הנחה לפריט: <strong className="text-[#e31837]">₪{promo.discount_rate}</strong></span>}
+                        {savings && savings > 0 && <span>חיסכון כולל: <strong className="text-[#e31837]">{formatCurrency(savings)}</strong></span>}
+                        <span>מקורי ליחידה: <strong className="text-[#171717]">{formatCurrency(item.item_price)}</strong></span>
+                        {originalMinPrice && (
+                          <span>מקורי למינ׳: <strong className="text-[#171717]">{formatCurrency(originalMinPrice)}</strong></span>
+                        )}
+                        {unavailable && <span className="font-semibold text-amber-800">כרגע אזל מהמלאי</span>}
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
-                    {promo.discount_rate && <span>הנחה לפריט: <strong className="text-[#e31837]">₪{promo.discount_rate}</strong></span>}
-                    {savings && savings > 0 && <span>חיסכון כולל: <strong className="text-[#e31837]">{formatCurrency(savings)}</strong></span>}
-                    <span>מקורי ליחידה: <strong className="text-[#171717]">{formatCurrency(item.item_price)}</strong></span>
-                    {originalMinPrice && (
-                      <span>מקורי למינ׳: <strong className="text-[#171717]">{formatCurrency(originalMinPrice)}</strong></span>
-                    )}
-                    {unavailable && <span className="font-semibold text-amber-800">כרגע אזל מהמלאי</span>}
                   </div>
                 </div>
               );
