@@ -728,27 +728,28 @@ def run_scan() -> None:
 
     branch_files = sorted(f for f in files if f"-{branch_id}-" in f)
 
-    # Skip if source files haven't changed since last successful scan
+    # Skip upsert if source files haven't changed since last successful scan
+    skip_upsert = False
     try:
         with open(LAST_FILES_CACHE) as fh:
             last_files = json.load(fh)
         if last_files == branch_files:
             log.info("Source files unchanged — skipping upsert.")
-            log.info("=== Scan complete in %.1fs ===", time.time() - start)
-            return
+            skip_upsert = True
     except Exception:
         pass
 
-    products, promos = fetch_branch_data(branch_id, files)
-    products = categorize_products(products)
-    upsert_products(products)
-    upsert_promos(promos)
-    mark_unavailable_products(branch_id, {p["item_code"] for p in products})
-    delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
-    fetch_and_upload_images(branch_id)
+    if not skip_upsert:
+        products, promos = fetch_branch_data(branch_id, files)
+        products = categorize_products(products)
+        upsert_products(products)
+        upsert_promos(promos)
+        mark_unavailable_products(branch_id, {p["item_code"] for p in products})
+        delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
+        with open(LAST_FILES_CACHE, "w") as fh:
+            json.dump(branch_files, fh)
 
-    with open(LAST_FILES_CACHE, "w") as fh:
-        json.dump(branch_files, fh)
+    fetch_and_upload_images(branch_id)
 
     log.info("=== Scan complete in %.1fs ===", time.time() - start)
 
