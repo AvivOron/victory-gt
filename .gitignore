@@ -40,6 +40,8 @@ worker/__pycache__/
 worker/*.pyc
 worker/branch_id.txt
 worker/filelist_cache.json
+worker/last_files_cache.json
+worker/category_cache.json
 worker/image_404_cache.json
 worker/venv/
 worker/images/
