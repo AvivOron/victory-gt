@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useTransition } from "react";
+import { useState, useEffect, useCallback, useTransition, useRef } from "react";
 import type { Product, Promo, PromoOriginalItem } from "@/lib/db";
 import { signIn, useSession } from "next-auth/react";
 
@@ -65,6 +65,18 @@ interface CategoryOption {
   total: number;
 }
 
+interface BarcodeDetectorLike {
+  detect(source: ImageBitmapSource): Promise<Array<{ rawValue?: string }>>;
+}
+
+interface BarcodeDetectorCtor {
+  new (options?: { formats?: string[] }): BarcodeDetectorLike;
+}
+
+type WindowWithBarcodeDetector = Window & {
+  BarcodeDetector?: BarcodeDetectorCtor;
+};
+
 import Header from "@/components/Header";
 import type { Branch } from "@/lib/db";
 
@@ -104,6 +116,16 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   const [household, setHousehold] = useState<HouseholdInfo | null>(null);
   const [householdPending, setHouseholdPending] = useState(false);
   const [cartWarning, setCartWarning] = useState<string | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState<string | null>(null);
+  const [scannerStatus, setScannerStatus] = useState("כוון את המצלמה אל הברקוד");
+  const [scannerCode, setScannerCode] = useState<string | null>(null);
+  const [scannerProduct, setScannerProduct] = useState<Product | null>(null);
+  const [scannerLoadingProduct, setScannerLoadingProduct] = useState(false);
+  const [scannerCameraActive, setScannerCameraActive] = useState(false);
+  const scannerVideoRef = useRef<HTMLVideoElement | null>(null);
+  const scannerStreamRef = useRef<MediaStream | null>(null);
+  const scannerFrameRef = useRef<number | null>(null);
   const [, startTransition] = useTransition();
 
   // Debounce search
@@ -191,6 +213,121 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     const timeoutId = window.setTimeout(() => setCartWarning(null), 3000);
     return () => window.clearTimeout(timeoutId);
   }, [cartWarning]);
+
+  const stopScanner = useCallback(() => {
+    if (scannerFrameRef.current !== null) {
+      window.cancelAnimationFrame(scannerFrameRef.current);
+      scannerFrameRef.current = null;
+    }
+    if (scannerStreamRef.current) {
+      for (const track of scannerStreamRef.current.getTracks()) track.stop();
+      scannerStreamRef.current = null;
+    }
+    if (scannerVideoRef.current) {
+      scannerVideoRef.current.srcObject = null;
+    }
+  }, []);
+
+  const fetchProductByBarcode = useCallback(async (barcode: string) => {
+    setScannerLoadingProduct(true);
+    setScannerProduct(null);
+    setScannerStatus("מחפש מוצר...");
+    try {
+      const params = new URLSearchParams({ q: barcode, page: "1", sort: "item_code", dir: "asc" });
+      const res = await fetch(`/victory-gt/api/products?${params}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to load product");
+      const data: ProductsResponse = await res.json();
+      const exactMatch = data.products.find(product => product.item_code === barcode) ?? null;
+      setScannerProduct(exactMatch);
+      setScannerStatus(exactMatch ? "המוצר נסרק בהצלחה" : "לא נמצא מוצר עבור הברקוד הזה");
+    } catch {
+      setScannerProduct(null);
+      setScannerStatus("לא הצלחנו לטעון את פרטי המוצר");
+    } finally {
+      setScannerLoadingProduct(false);
+    }
+  }, []);
+
+  const startScanner = useCallback(async () => {
+    if (typeof window === "undefined") return;
+
+    stopScanner();
+    setScannerError(null);
+    setScannerCode(null);
+    setScannerProduct(null);
+    setScannerCameraActive(false);
+    setScannerStatus("מבקש הרשאת מצלמה...");
+
+    const BarcodeDetectorApi = (window as WindowWithBarcodeDetector).BarcodeDetector;
+    if (!navigator.mediaDevices?.getUserMedia || !BarcodeDetectorApi) {
+      setScannerError("סריקת ברקוד נתמכת כרגע רק בדפדפנים ניידים עם תמיכה במצלמה וב-BarcodeDetector.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+        },
+        audio: false,
+      });
+      scannerStreamRef.current = stream;
+      setScannerCameraActive(true);
+      if (scannerVideoRef.current) {
+        scannerVideoRef.current.srcObject = stream;
+        await scannerVideoRef.current.play();
+      }
+
+      const detector = new BarcodeDetectorApi({
+        formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"],
+      });
+
+      setScannerStatus("כוון את המצלמה אל הברקוד");
+
+      const scanFrame = async () => {
+        const video = scannerVideoRef.current;
+        if (!video || video.readyState < 2) {
+          scannerFrameRef.current = window.requestAnimationFrame(() => { void scanFrame(); });
+          return;
+        }
+
+        try {
+          const results = await detector.detect(video);
+          const rawValue = results.find(result => result.rawValue?.trim())?.rawValue?.trim();
+          if (rawValue) {
+            setScannerCode(rawValue);
+            setScannerStatus(`נסרק: ${rawValue}`);
+            stopScanner();
+            setScannerCameraActive(false);
+            await fetchProductByBarcode(rawValue);
+            return;
+          }
+        } catch {
+          setScannerError("סריקת הברקוד נכשלה. אפשר לנסות שוב.");
+          stopScanner();
+          setScannerCameraActive(false);
+          return;
+        }
+
+        scannerFrameRef.current = window.requestAnimationFrame(() => { void scanFrame(); });
+      };
+
+      scannerFrameRef.current = window.requestAnimationFrame(() => { void scanFrame(); });
+    } catch {
+      setScannerError("לא הצלחנו לפתוח את המצלמה. בדוק הרשאות מצלמה ונסה שוב.");
+      stopScanner();
+      setScannerCameraActive(false);
+    }
+  }, [fetchProductByBarcode, stopScanner]);
+
+  useEffect(() => {
+    if (!scannerOpen) {
+      stopScanner();
+      return;
+    }
+    void startScanner();
+    return () => stopScanner();
+  }, [scannerOpen, startScanner, stopScanner]);
 
   // Fetch products
   const fetchProducts = useCallback(async () => {
@@ -438,6 +575,19 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     }
   }, [fetchShoppingList, promptGoogleSignIn, status]);
 
+  const openScanner = useCallback(() => {
+    setScannerOpen(true);
+  }, []);
+
+  const closeScanner = useCallback(() => {
+    setScannerOpen(false);
+    setScannerError(null);
+    setScannerCode(null);
+    setScannerProduct(null);
+    setScannerCameraActive(false);
+    setScannerStatus("כוון את המצלמה אל הברקוד");
+  }, []);
+
   return (
     <>
     <Header branch={branch} lastUpdated={lastUpdated} onCartClick={() => setTab("shopping")} cartCount={shoppingList.length} />
@@ -487,6 +637,13 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                   >×</button>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={openScanner}
+                className="sm:hidden h-10 rounded-lg border border-gray-300 bg-white px-4 text-sm font-bold text-[#171717] transition-colors hover:border-[#e31837] hover:text-[#e31837]"
+              >
+                סריקת ברקוד
+              </button>
               {hasActiveFilters && (
                 <button
                   onClick={clearFilters}
@@ -801,6 +958,31 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
           positiveNumber={positiveNumber}
         />
       )}
+      {scannerOpen && (
+        <BarcodeScannerModal
+          videoRef={scannerVideoRef}
+          cameraActive={scannerCameraActive}
+          status={scannerStatus}
+          error={scannerError}
+          scannedCode={scannerCode}
+          loadingProduct={scannerLoadingProduct}
+          product={scannerProduct}
+          favouriteCodes={favouriteCodes}
+          favouritePendingCode={favouritePendingCode}
+          shoppingList={shoppingList}
+          shoppingPendingCode={shoppingPendingCode}
+          statusAuth={status}
+          onClose={closeScanner}
+          onRetry={() => { void startScanner(); }}
+          onAddToCart={addToCart}
+          onToggleFavourite={toggleFavourite}
+          onShowPromos={product => {
+            closeScanner();
+            setSelectedProduct(product);
+          }}
+          onSignIn={promptGoogleSignIn}
+        />
+      )}
     </div>
     </>
   );
@@ -1006,6 +1188,180 @@ function HouseholdPanel({
         </button>
       </div>
       <p className="mt-2 text-xs text-gray-400">שתף את הקוד עם בני ביתך כדי שכולכם תראו ותעדכנו את אותה עגלה.</p>
+    </div>
+  );
+}
+
+function BarcodeScannerModal({
+  videoRef,
+  cameraActive,
+  status,
+  error,
+  scannedCode,
+  loadingProduct,
+  product,
+  favouriteCodes,
+  favouritePendingCode,
+  shoppingList,
+  shoppingPendingCode,
+  statusAuth,
+  onClose,
+  onRetry,
+  onAddToCart,
+  onToggleFavourite,
+  onShowPromos,
+  onSignIn,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  cameraActive: boolean;
+  status: string;
+  error: string | null;
+  scannedCode: string | null;
+  loadingProduct: boolean;
+  product: Product | null;
+  favouriteCodes: Set<string>;
+  favouritePendingCode: string | null;
+  shoppingList: ShoppingListItem[];
+  shoppingPendingCode: string | null;
+  statusAuth: string;
+  onClose: () => void;
+  onRetry: () => void;
+  onAddToCart: (product: { item_code: string; item_name: string; item_price: number; category?: string | null; is_available?: boolean }) => void | Promise<void>;
+  onToggleFavourite: (itemCode: string) => void | Promise<void>;
+  onShowPromos: (product: Product) => void;
+  onSignIn: () => void;
+}) {
+  const cartItem = product ? shoppingList.find(item => item.item_code === product.item_code) : null;
+  const unavailable = product?.is_available === false;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 sm:hidden">
+      <div className="flex h-full flex-col">
+        <div className="flex items-center justify-between px-4 py-3 text-white">
+          <div>
+            <p className="text-sm font-bold">סריקת ברקוד</p>
+            <p className="text-xs text-white/70">{status}</p>
+          </div>
+          <button type="button" onClick={onClose} className="h-10 w-10 rounded-full border border-white/20 text-lg leading-none text-white">
+            ×
+          </button>
+        </div>
+
+        <div className="relative mx-4 overflow-hidden rounded-2xl border border-white/10 bg-black">
+          {cameraActive ? (
+            <>
+              <video ref={videoRef} className="aspect-[3/4] w-full object-cover" playsInline muted autoPlay />
+              <div className="pointer-events-none absolute inset-x-8 top-1/2 h-24 -translate-y-1/2 rounded-2xl border-2 border-[#e31837] shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
+            </>
+          ) : (
+            <div className="flex aspect-[3/4] items-center justify-center px-6 text-center text-sm text-white/70">
+              {product ? "המצלמה נסגרה לאחר הסריקה" : "המצלמה כבויה כרגע"}
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          {error && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+              <p>{error}</p>
+              <button type="button" onClick={onRetry} className="mt-2 text-xs underline underline-offset-2">נסה שוב</button>
+            </div>
+          )}
+
+          {!error && loadingProduct && (
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-5 text-center text-sm text-white">
+              <InlineSpinner />
+              <p className="mt-3">טוען פרטי מוצר...</p>
+            </div>
+          )}
+
+          {!error && !loadingProduct && scannedCode && !product && (
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-5 text-center text-sm text-white">
+              <p>לא נמצא מוצר עבור הברקוד</p>
+              <p className="mt-1 font-mono text-white/70">{scannedCode}</p>
+              <button type="button" onClick={onRetry} className="mt-3 rounded-lg bg-white px-4 py-2 text-xs font-bold text-[#171717]">סרוק שוב</button>
+            </div>
+          )}
+
+          {product && (
+            <div className="mt-4 rounded-2xl bg-white p-4 shadow-xl">
+              <div className="flex items-start gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (statusAuth !== "authenticated") {
+                      onSignIn();
+                      return;
+                    }
+                    void onToggleFavourite(product.item_code);
+                  }}
+                  disabled={favouritePendingCode === product.item_code}
+                  className={`mt-0.5 h-9 w-9 flex-shrink-0 rounded-lg border text-sm transition-colors ${
+                    favouriteCodes.has(product.item_code)
+                      ? "border-[#e31837] bg-red-50 text-[#e31837]"
+                      : "border-gray-200 bg-white text-gray-400 hover:border-[#e31837] hover:text-[#e31837]"
+                  } ${favouritePendingCode === product.item_code ? "cursor-wait opacity-60" : ""}`}
+                  aria-label={favouriteCodes.has(product.item_code) ? "הסרה ממועדפים" : "שמירה במועדפים"}
+                >
+                  ★
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="text-base font-bold text-[#171717]">{product.item_name}</p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    <span dir="ltr" className="font-mono">{product.item_code}</span>
+                    {product.category && <span> · {product.category}</span>}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between">
+                <div>
+                  <p className="text-2xl font-black text-green-700">₪{Number(product.item_price).toFixed(2)}</p>
+                  {product.unit_of_measure && <p className="mt-1 text-xs text-gray-400">{product.unit_of_measure}</p>}
+                </div>
+                {cartItem ? (
+                  <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
+                    <button type="button" onClick={() => { void onAddToCart({ item_code: product.item_code, item_name: product.item_name, item_price: product.item_price, category: product.category, is_available: product.is_available }); }} disabled={shoppingPendingCode === product.item_code} className="h-9 w-8 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
+                    <span className="flex min-w-[2rem] items-center justify-center text-sm font-bold tabular-nums">
+                      {shoppingPendingCode === product.item_code ? <InlineSpinner /> : cartItem.quantity}
+                    </span>
+                    <button type="button" onClick={onRetry} className="hidden" aria-hidden="true" />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { void onAddToCart({ item_code: product.item_code, item_name: product.item_name, item_price: product.item_price, category: product.category, is_available: product.is_available }); }}
+                    disabled={shoppingPendingCode === product.item_code}
+                    className={`rounded-lg bg-[#171717] px-4 py-2 text-sm font-bold text-white ${shoppingPendingCode === product.item_code ? "opacity-60" : ""}`}
+                  >
+                    {shoppingPendingCode === product.item_code ? <InlineSpinner /> : "הוסף לעגלה"}
+                  </button>
+                )}
+              </div>
+
+              {unavailable && (
+                <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                  מוצר זה כרגע אזל מהמלאי
+                </p>
+              )}
+
+              {(product.discount_promos?.length ?? 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onShowPromos(product)}
+                  className="mt-4 w-full rounded-lg bg-[#e31837] px-4 py-2 text-sm font-bold text-white"
+                >
+                  צפה ב-{product.discount_promos?.length} מבצעים
+                </button>
+              )}
+
+              <button type="button" onClick={onRetry} className="mt-3 w-full rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600">
+                סרוק מוצר נוסף
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
