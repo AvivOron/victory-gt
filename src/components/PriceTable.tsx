@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useTransition, useRef } from "react";
-import Image from "next/image";
 import type { Product, Promo, PromoOriginalItem } from "@/lib/db";
 import { signIn, useSession } from "next-auth/react";
 import { BarcodeFormat, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
@@ -1891,7 +1890,8 @@ function ProductImage({ itemCode, itemName, width, height, className }: { itemCo
     return <span className={`block bg-gray-100 rounded ${className}`} style={{ width, height }} />;
   }
   return (
-    <Image
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
       src={`${BLOB_BASE}/products/${itemCode}.jpg`}
       alt={itemName}
       width={width}
