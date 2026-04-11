@@ -1331,18 +1331,12 @@ function BarcodeScannerModal({
           </button>
         </div>
 
-        <div className="relative mx-4 overflow-hidden rounded-2xl border border-white/10 bg-black">
-          {cameraActive ? (
-            <>
-              <video ref={videoRef} className="aspect-[3/4] w-full object-cover" playsInline muted autoPlay />
-              <div className="pointer-events-none absolute inset-x-8 top-1/2 h-24 -translate-y-1/2 rounded-2xl border-2 border-[#e31837] shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
-            </>
-          ) : (
-            <div className="flex aspect-[3/4] items-center justify-center px-6 text-center text-sm text-white/70">
-              {product ? "המצלמה נסגרה לאחר הסריקה" : "המצלמה כבויה כרגע"}
-            </div>
-          )}
-        </div>
+        {cameraActive && (
+          <div className="relative mx-4 overflow-hidden rounded-2xl border border-white/10 bg-black">
+            <video ref={videoRef} className="aspect-[3/4] w-full object-cover" playsInline muted autoPlay />
+            <div className="pointer-events-none absolute inset-x-8 top-1/2 h-24 -translate-y-1/2 rounded-2xl border-2 border-[#e31837] shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
           {error && (
