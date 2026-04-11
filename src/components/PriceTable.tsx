@@ -743,7 +743,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
 
   return (
     <>
-    <Header branch={branch} lastUpdated={lastUpdated} onCartClick={() => setTab("shopping")} cartCount={shoppingList.length} />
+    <Header branch={branch} lastUpdated={lastUpdated} onCartClick={() => { setTab("shopping"); void fetchShoppingList(); }} cartCount={shoppingList.length} />
     <div className="mx-auto max-w-7xl px-4 pb-10 sm:px-6 lg:px-8">
       {/* Controls */}
       <div className="sticky top-0 z-10 bg-[#f7f8fa]/95 py-3 backdrop-blur">
