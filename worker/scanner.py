@@ -707,7 +707,9 @@ def git_sync_images() -> None:
         return subprocess.check_output(cmd.split(), cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
     try:
         log.info("git pull...")
+        run("git stash")
         run("git pull --rebase")
+        run("git stash pop")
         status = run("git status --short public/products")
         if not status:
             log.info("No new images to commit.")
