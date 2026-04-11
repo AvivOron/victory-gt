@@ -98,7 +98,21 @@ log = logging.getLogger(__name__)
 # ── Neon / Postgres client ────────────────────────────────────────────────────
 
 def get_conn():
-    return psycopg2.connect(DATABASE_URL)
+    url = DATABASE_URL
+    # Neon requires SNI; old libpq versions lack it, so pass the endpoint ID
+    # as a query parameter instead: ?options=endpoint%3D<endpoint-id>
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+    parsed = urlparse(url)
+    endpoint_id = parsed.hostname.split(".")[0] if parsed.hostname else None
+    if endpoint_id:
+        qs = parse_qs(parsed.query)
+        qs.setdefault("options", [])
+        opts = qs["options"][0] if qs["options"] else ""
+        if "endpoint=" not in opts:
+            opts = (opts + f" endpoint={endpoint_id}").strip()
+        qs["options"] = [opts]
+        url = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+    return psycopg2.connect(url)
 
 
 def db_execute(statements: list[dict]) -> None:
