@@ -53,3 +53,17 @@ CREATE INDEX IF NOT EXISTS idx_products_name   ON products(item_name);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_promos_branch   ON promos(branch_id);
 CREATE INDEX IF NOT EXISTS idx_favourites_user_branch ON favourites(user_id, branch_id, created_at);
+
+CREATE TABLE IF NOT EXISTS shopping_list (
+  user_id    TEXT,
+  user_email TEXT,
+  item_code  TEXT,
+  item_name  TEXT,
+  item_price REAL,
+  quantity   INTEGER DEFAULT 1,
+  checked    INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, item_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_shopping_list_user ON shopping_list(user_id, created_at);

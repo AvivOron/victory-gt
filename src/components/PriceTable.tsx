@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useTransition } from "react";
-import type { Product, Promo } from "@/lib/db";
+import type { Product, Promo, PromoOriginalItem } from "@/lib/db";
 import { signIn, useSession } from "next-auth/react";
 
-type Tab = "prices" | "promos" | "favourites";
+type Tab = "prices" | "promos" | "favourites" | "shopping";
 type SortCol = "item_name" | "item_price" | "manufacturer_name" | "item_code";
 type SortDir = "asc" | "desc";
 const PAGE_SIZE = 20;
@@ -33,17 +33,35 @@ interface FavouritesResponse {
   favourites: string[];
 }
 
+interface ShoppingListItem {
+  item_code: string;
+  item_name: string;
+  item_price: number;
+  quantity: number;
+  checked: boolean;
+  promo_label?: string | null;
+}
+
+interface ShoppingListResponse {
+  items: ShoppingListItem[];
+}
+
 interface CategoryOption {
   name: string;
   total: number;
 }
 
+import Header from "@/components/Header";
+import type { Branch } from "@/lib/db";
+
 interface Props {
   productCount: number;
   promoCount: number;
+  branch: Branch | null;
+  lastUpdated: string | null;
 }
 
-export default function PriceTable({ productCount, promoCount }: Props) {
+export default function PriceTable({ productCount, promoCount, branch, lastUpdated }: Props) {
   const { status } = useSession();
   const [tab, setTab] = useState<Tab>("prices");
   const [search, setSearch] = useState("");
@@ -67,6 +85,8 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   const [loading, setLoading] = useState(false);
   const [favouriteCodes, setFavouriteCodes] = useState<Set<string>>(new Set());
   const [favouritePendingCode, setFavouritePendingCode] = useState<string | null>(null);
+  const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
+  const [shoppingPendingCode, setShoppingPendingCode] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   // Debounce search
@@ -108,6 +128,25 @@ export default function PriceTable({ productCount, promoCount }: Props) {
   useEffect(() => {
     fetchFavourites();
   }, [fetchFavourites]);
+
+  const fetchShoppingList = useCallback(async () => {
+    if (status !== "authenticated") {
+      setShoppingList([]);
+      return;
+    }
+    try {
+      const res = await fetch("/victory-gt/api/shopping-list", { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to load shopping list");
+      const data: ShoppingListResponse = await res.json();
+      setShoppingList(data.items);
+    } catch {
+      setShoppingList([]);
+    }
+  }, [status]);
+
+  useEffect(() => {
+    fetchShoppingList();
+  }, [fetchShoppingList]);
 
   // Fetch products
   const fetchProducts = useCallback(async () => {
@@ -240,7 +279,85 @@ export default function PriceTable({ productCount, promoCount }: Props) {
     }
   }, [favouriteCodes, promptGoogleSignIn, status]);
 
+  const addToCart = useCallback(async (product: { item_code: string; item_name: string; item_price: number }) => {
+    if (status !== "authenticated") { promptGoogleSignIn(); return; }
+    setShoppingPendingCode(product.item_code);
+    try {
+      const res = await fetch("/victory-gt/api/shopping-list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemCode: product.item_code, itemName: product.item_name, itemPrice: product.item_price }),
+      });
+      if (res.status === 401) { promptGoogleSignIn(); return; }
+      if (!res.ok) throw new Error("Failed to update shopping list");
+      setShoppingList(current => {
+        const existing = current.find(i => i.item_code === product.item_code);
+        if (existing) return current.map(i => i.item_code === product.item_code ? { ...i, quantity: i.quantity + 1 } : i);
+        return [...current, { item_code: product.item_code, item_name: product.item_name, item_price: product.item_price, quantity: 1, checked: false }];
+      });
+    } finally {
+      setShoppingPendingCode(null);
+    }
+  }, [promptGoogleSignIn, status]);
+
+  const decrementCart = useCallback(async (product: { item_code: string }) => {
+    setShoppingPendingCode(product.item_code);
+    try {
+      await fetch("/victory-gt/api/shopping-list", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemCode: product.item_code }),
+      });
+      setShoppingList(current => {
+        const existing = current.find(i => i.item_code === product.item_code);
+        if (!existing) return current;
+        if (existing.quantity <= 1) return current.filter(i => i.item_code !== product.item_code);
+        return current.map(i => i.item_code === product.item_code ? { ...i, quantity: i.quantity - 1 } : i);
+      });
+    } finally {
+      setShoppingPendingCode(null);
+    }
+  }, []);
+
+  const toggleChecked = useCallback(async (item: ShoppingListItem) => {
+    const next = !item.checked;
+    setShoppingList(current => current.map(i =>
+      i.item_code === item.item_code ? { ...i, checked: next } : i
+    ));
+    await fetch("/victory-gt/api/shopping-list", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemCode: item.item_code, checked: next }),
+    });
+  }, []);
+
+  const clearChecked = useCallback(async () => {
+    const checkedItems = shoppingList.filter(i => i.checked);
+    setShoppingList(current => current.filter(i => !i.checked));
+    await Promise.all(checkedItems.map(item =>
+      fetch("/victory-gt/api/shopping-list", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemCode: item.item_code }),
+      })
+    ));
+  }, [shoppingList]);
+
+  const resetCart = useCallback(async () => {
+    const all = shoppingList;
+    setShoppingList([]);
+    await Promise.all(all.map(item =>
+      fetch("/victory-gt/api/shopping-list", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemCode: item.item_code, force: true }),
+      })
+    ));
+  }, [shoppingList]);
+
   return (
+    <>
+    <Header branch={branch} lastUpdated={lastUpdated} onCartClick={() => setTab("shopping")} cartCount={shoppingList.length} />
     <div className="mx-auto max-w-7xl px-4 pb-10 sm:px-6 lg:px-8">
       {/* Controls */}
       <div className="sticky top-0 z-10 bg-[#f7f8fa]/95 py-3 backdrop-blur">
@@ -256,42 +373,46 @@ export default function PriceTable({ productCount, promoCount }: Props) {
               מועדפים ({favouriteCodes.size.toLocaleString()})
             </TabBtn>
           </div>
-          <select
-            value={category}
-            onChange={event => setCategory(event.target.value)}
-            disabled={categoriesLoading}
-            className={`h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold text-[#171717] focus:border-[#e31837] focus:outline-none focus:ring-2 focus:ring-[#e31837]/15 sm:w-56 ${categoriesLoading ? "cursor-wait opacity-55" : ""}`}
-          >
-            <option value="">{categoriesLoading ? "טוען קטגוריות..." : "כל הקטגוריות"}</option>
-            {categories.map(option => (
-              <option key={option.name} value={option.name}>
-                {option.name} ({option.total.toLocaleString()})
-              </option>
-            ))}
-          </select>
-          <div className="relative flex-1 min-w-[160px]">
-            <input
-              type="text"
-              placeholder="חיפוש..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="h-10 w-full rounded-lg border border-gray-300 bg-[#f7f8fa] px-4 text-sm transition-colors focus:border-[#e31837] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#e31837]/15"
-              dir="rtl"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch("")}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none"
-              >×</button>
-            )}
-          </div>
-          {hasActiveFilters && (
-            <button
-              onClick={clearFilters}
-              className="h-10 rounded-lg border border-gray-300 bg-white px-4 text-sm font-bold text-gray-600 transition-colors hover:border-[#e31837] hover:text-[#e31837]"
-            >
-              נקה סינון
-            </button>
+          {tab !== "shopping" && (
+            <>
+              <select
+                value={category}
+                onChange={event => setCategory(event.target.value)}
+                disabled={categoriesLoading}
+                className={`h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold text-[#171717] focus:border-[#e31837] focus:outline-none focus:ring-2 focus:ring-[#e31837]/15 sm:w-56 ${categoriesLoading ? "cursor-wait opacity-55" : ""}`}
+              >
+                <option value="">{categoriesLoading ? "טוען קטגוריות..." : "כל הקטגוריות"}</option>
+                {categories.map(option => (
+                  <option key={option.name} value={option.name}>
+                    {option.name} ({option.total.toLocaleString()})
+                  </option>
+                ))}
+              </select>
+              <div className="relative flex-1 min-w-[160px]">
+                <input
+                  type="text"
+                  placeholder="חיפוש..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-gray-300 bg-[#f7f8fa] px-4 text-sm transition-colors focus:border-[#e31837] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#e31837]/15"
+                  dir="rtl"
+                />
+                {search && (
+                  <button
+                    onClick={() => setSearch("")}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none"
+                  >×</button>
+                )}
+              </div>
+              {hasActiveFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="h-10 rounded-lg border border-gray-300 bg-white px-4 text-sm font-bold text-gray-600 transition-colors hover:border-[#e31837] hover:text-[#e31837]"
+                >
+                  נקה סינון
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -330,7 +451,9 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                   </colgroup>
                   <thead>
                     <tr className="bg-[#171717] text-white">
-                      <Th onClick={() => handleSort("item_name")}>שם מוצר{sortIcon("item_name")}</Th>
+                      <th onClick={() => handleSort("item_name")} className="px-4 py-3 text-right text-xs font-bold uppercase whitespace-nowrap select-none cursor-pointer hover:bg-white/10">
+                        <span style={{ paddingRight: "7.5rem" }}>שם מוצר{sortIcon("item_name")}</span>
+                      </th>
                       <Th onClick={() => handleSort("item_code")}>ברקוד{sortIcon("item_code")}</Th>
                       <Th onClick={() => handleSort("item_price")}>מחיר{sortIcon("item_price")}</Th>
                       <Th>יחידה</Th>
@@ -350,7 +473,7 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                         className={`border-b border-gray-100 transition-colors hover:bg-red-50/70 ${hasDiscount ? "cursor-pointer" : ""} ${i % 2 === 1 ? "bg-[#fafafa]" : "bg-white"}`}
                       >
                         <td className="px-4 py-3">
-                          <div className="flex items-start gap-2">
+                          <div className="flex items-center gap-2">
                             <button
                               type="button"
                               onClick={event => {
@@ -368,6 +491,17 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                             >
                               ★
                             </button>
+                            <div className="mt-0.5 flex-shrink-0 flex justify-center">
+                              {(() => { const cartItem = shoppingList.find(i => i.item_code === p.item_code); return cartItem ? (
+                                <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
+                                  <button type="button" onClick={e => { e.stopPropagation(); void decrementCart(p); }} disabled={shoppingPendingCode === p.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הפחת כמות">−</button>
+                                  <span className="flex-1 text-center text-sm font-bold tabular-nums">{cartItem.quantity}</span>
+                                  <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
+                                </div>
+                              ) : (
+                                <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className={`h-8 w-8 rounded-lg border text-sm transition-colors border-gray-200 bg-white text-gray-400 hover:border-green-600 hover:text-green-600 ${shoppingPendingCode === p.item_code ? "cursor-wait opacity-60" : ""}`} aria-label="הוספה לרשימת קניות">🛒</button>
+                              ); })()}
+                            </div>
                             <div className="min-w-0">
                               <p className="truncate">{p.item_name}</p>
                               {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
@@ -435,6 +569,17 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                       >
                         ★
                       </button>
+                      <div className="mt-0.5 flex-shrink-0 flex justify-center">
+                        {(() => { const cartItem = shoppingList.find(i => i.item_code === p.item_code); return cartItem ? (
+                          <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
+                            <button type="button" onClick={e => { e.stopPropagation(); void decrementCart(p); }} disabled={shoppingPendingCode === p.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הפחת כמות">−</button>
+                            <span className="flex-1 text-center text-sm font-bold tabular-nums">{cartItem.quantity}</span>
+                            <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
+                          </div>
+                        ) : (
+                          <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className={`h-8 w-8 rounded-lg border text-sm transition-colors border-gray-200 bg-white text-gray-400 hover:border-green-600 hover:text-green-600 ${shoppingPendingCode === p.item_code ? "cursor-wait opacity-60" : ""}`} aria-label="הוספה לרשימת קניות">🛒</button>
+                        ); })()}
+                      </div>
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold text-sm leading-snug truncate">{p.item_name}</p>
                         {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
@@ -444,11 +589,8 @@ export default function PriceTable({ productCount, promoCount }: Props) {
                       {p.manufacturer_name && <span>{p.manufacturer_name} · </span>}
                       <span dir="ltr" className="font-mono">{p.item_code}</span>
                     </p>
-                    {(p.unit_of_measure || hasDiscount) && (
+                    {hasDiscount && (
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        {p.unit_of_measure && (
-                          <span className="inline-block rounded-lg border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">{p.unit_of_measure}</span>
-                        )}
                         {hasDiscount && (
                           <button
                             onClick={event => {
@@ -512,6 +654,27 @@ export default function PriceTable({ productCount, promoCount }: Props) {
             </div>
           </>
         )}
+
+        {tab === "shopping" && (
+          <ShoppingListView
+            items={shoppingList}
+            status={status}
+            onToggleChecked={toggleChecked}
+            onAdd={(item) => addToCart(item)}
+            onDecrement={(item) => decrementCart(item)}
+            onRemove={async (item: ShoppingListItem) => {
+              setShoppingList(current => current.filter(i => i.item_code !== item.item_code));
+              await fetch("/victory-gt/api/shopping-list", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ itemCode: item.item_code, force: true }),
+              });
+            }}
+            onClearChecked={clearChecked}
+            onResetCart={resetCart}
+            onSignIn={promptGoogleSignIn}
+          />
+        )}
       </div>
       {selectedProduct && (
         <DiscountModal
@@ -527,10 +690,14 @@ export default function PriceTable({ productCount, promoCount }: Props) {
           onClose={() => setSelectedPromo(null)}
           itemCodes={itemCodes}
           formatCurrency={formatCurrency}
+          shoppingList={shoppingList}
+          onAddToCart={(item) => addToCart({ item_code: item.item_code, item_name: item.item_name, item_price: item.item_price })}
+          onDecrementCart={(item) => decrementCart({ item_code: item.item_code })}
           positiveNumber={positiveNumber}
         />
       )}
     </div>
+    </>
   );
 }
 
@@ -544,6 +711,148 @@ function TabBtn({ children, active, onClick }: { children: React.ReactNode; acti
     >
       {children}
     </button>
+  );
+}
+
+function ShoppingListView({
+  items,
+  status,
+  onToggleChecked,
+  onAdd,
+  onDecrement,
+  onRemove,
+  onClearChecked,
+  onResetCart,
+  onSignIn,
+}: {
+  items: ShoppingListItem[];
+  status: string;
+  onToggleChecked: (item: ShoppingListItem) => void;
+  onAdd: (item: ShoppingListItem) => void;
+  onDecrement: (item: ShoppingListItem) => void;
+  onRemove: (item: ShoppingListItem) => void;
+  onClearChecked: () => void;
+  onResetCart: () => void;
+  onSignIn: () => void;
+}) {
+  if (status !== "authenticated") {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-white px-5 py-10 text-center text-gray-500 shadow-sm">
+        <p className="text-lg font-semibold text-[#171717]">כדי להשתמש ברשימת קניות צריך להתחבר</p>
+        <button
+          onClick={onSignIn}
+          className="mt-4 h-10 rounded-lg bg-[#171717] px-4 text-sm font-bold text-white transition-colors hover:bg-[#2a2a2a]"
+        >
+          התחברות עם Google
+        </button>
+      </div>
+    );
+  }
+
+  const unchecked = items.filter(i => !i.checked);
+  const checked = items.filter(i => i.checked);
+  const total = items.reduce((sum, i) => sum + i.item_price * i.quantity, 0);
+
+  if (items.length === 0) {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-white px-5 py-16 text-center text-gray-400 shadow-sm">
+        <p className="text-4xl mb-3">🛒</p>
+        <p className="text-lg font-semibold text-[#171717]">רשימת הקניות ריקה</p>
+        <p className="mt-1 text-sm">לחץ על 🛒 ליד מוצר כדי להוסיף אותו</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between px-1" dir="rtl">
+        <p className="text-sm text-gray-500">
+          {unchecked.length} פריטים נותרו · סה״כ משוער{" "}
+          <strong className="text-green-700">₪{total.toFixed(2)}</strong>
+        </p>
+        <button
+          onClick={onResetCart}
+          className="text-xs font-semibold text-gray-400 hover:text-[#e31837] transition-colors"
+        >
+          אפס עגלה
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {unchecked.map(item => (
+          <ShoppingListRow key={item.item_code} item={item} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} />
+        ))}
+        {checked.length > 0 && (
+          <>
+            <p className="pt-2 pb-1 px-1 text-xs font-semibold text-gray-400 uppercase tracking-wide">נאסף</p>
+            {checked.map(item => (
+              <ShoppingListRow key={item.item_code} item={item} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} />
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ShoppingListRow({
+  item,
+  promoLabel,
+  onToggle,
+  onAdd,
+  onDecrement,
+  onRemove,
+}: {
+  item: ShoppingListItem;
+  promoLabel?: string;
+  onToggle: (item: ShoppingListItem) => void;
+  onAdd: (item: ShoppingListItem) => void;
+  onDecrement: (item: ShoppingListItem) => void;
+  onRemove: (item: ShoppingListItem) => void;
+}) {
+  return (
+    <div className={`grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 rounded-lg border bg-white p-4 shadow-sm transition-colors ${item.checked ? "border-gray-100 opacity-60" : "border-gray-200"}`}>
+      {/* checkbox */}
+      <button
+        type="button"
+        onClick={() => onToggle(item)}
+        className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded border-2 transition-colors ${item.checked ? "border-green-500 bg-green-500" : "border-gray-300 hover:border-green-500"}`}
+        aria-label={item.checked ? "סמן כלא נאסף" : "סמן כנאסף"}
+      >
+        {item.checked && <span className="text-white text-xs font-bold leading-none">✓</span>}
+      </button>
+      {/* name + barcode */}
+      <div className="min-w-0 text-right">
+        <p className={`font-semibold text-sm leading-snug ${item.checked ? "line-through text-gray-400" : "text-[#171717]"}`}>
+          {item.item_name}
+        </p>
+        <p className="text-xs text-gray-400 mt-0.5 font-mono" dir="ltr">{item.item_code}</p>
+        {promoLabel && !item.checked && (
+          <span className="mt-1 inline-block rounded border border-[#e31837]/30 bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-[#e31837]">{promoLabel}</span>
+        )}
+      </div>
+      {/* qty + price */}
+      <div className="flex flex-col items-end gap-1">
+        <div className={`flex items-center rounded-lg border overflow-hidden ${item.checked ? "border-gray-200 text-gray-300" : "border-green-600 text-green-700"}`}>
+          <button type="button" onClick={() => onDecrement(item)} className="h-7 w-6 text-sm leading-none hover:bg-green-50 transition-colors" aria-label="הפחת כמות">−</button>
+          <span className="min-w-[1.25rem] text-center text-sm font-bold tabular-nums">{item.quantity}</span>
+          <button type="button" onClick={() => onAdd(item)} className="h-7 w-6 text-sm leading-none hover:bg-green-50 transition-colors" aria-label="הוסף כמות">+</button>
+        </div>
+        <p className={`text-xs font-bold whitespace-nowrap tabular-nums ${item.checked ? "text-gray-300" : "text-green-700"}`} dir="ltr">
+          ₪{(item.item_price * item.quantity).toFixed(2)}
+          {item.quantity > 1 && <span className="font-normal text-gray-400"> (₪{item.item_price.toFixed(2)} ליח׳)</span>}
+        </p>
+      </div>
+      {/* remove */}
+      <button
+        type="button"
+        onClick={() => onRemove(item)}
+        className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:border-[#e31837] hover:text-[#e31837] transition-colors text-base leading-none"
+        aria-label="הסרה מהרשימה"
+      >
+        ×
+      </button>
+    </div>
   );
 }
 
@@ -644,12 +953,18 @@ function PromoModal({
   itemCodes,
   formatCurrency,
   positiveNumber,
+  shoppingList,
+  onAddToCart,
+  onDecrementCart,
 }: {
   promo: Promo;
   onClose: () => void;
   itemCodes: (raw: string | string[]) => string[];
   formatCurrency: (value: number | string) => string;
   positiveNumber: (value: string) => number | null;
+  shoppingList: ShoppingListItem[];
+  onAddToCart: (item: PromoOriginalItem) => void;
+  onDecrementCart: (item: PromoOriginalItem) => void;
 }) {
   const codes = itemCodes(promo.item_codes);
   const minQty = positiveNumber(promo.min_qty);
@@ -696,13 +1011,25 @@ function PromoModal({
               const originalMinPrice = minQty ? Number(item.item_price) * minQty : null;
               const savings = originalMinPrice && discountedPrice ? originalMinPrice - discountedPrice : null;
 
+              const cartItem = shoppingList.find(i => i.item_code === item.item_code);
               return (
                 <div key={item.item_code} className="rounded-lg border border-gray-200 bg-[#fafafa] p-3">
                   <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                     <p className="font-bold text-[#171717]">{item.item_name || item.item_code}</p>
-                    <span className="text-xs text-gray-400">
-                      ברקוד: <span dir="ltr" className="font-mono">{item.item_code}</span>
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400">
+                        ברקוד: <span dir="ltr" className="font-mono">{item.item_code}</span>
+                      </span>
+                      {cartItem ? (
+                        <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
+                          <button onClick={() => onDecrementCart(item)} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors" aria-label="הפחת כמות">−</button>
+                          <span className="min-w-[1.25rem] text-center text-sm font-bold tabular-nums">{cartItem.quantity}</span>
+                          <button onClick={() => onAddToCart(item)} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors" aria-label="הוסף כמות">+</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => onAddToCart(item)} className="h-8 w-8 flex-shrink-0 rounded-lg border border-gray-200 bg-white text-sm text-gray-400 hover:border-green-600 hover:text-green-600 transition-colors" aria-label="הוספה לרשימת קניות">🛒</button>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                     {promo.discount_rate && <span>הנחה לפריט: <strong className="text-[#e31837]">₪{promo.discount_rate}</strong></span>}
