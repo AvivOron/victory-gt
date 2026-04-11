@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useTransition, useRef } from "react";
 import type { Product, Promo, PromoOriginalItem } from "@/lib/db";
 import { signIn, useSession } from "next-auth/react";
+import { BarcodeFormat, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 
 type Tab = "prices" | "promos" | "favourites" | "shopping";
 type SortCol = "item_name" | "item_price" | "manufacturer_name" | "item_code";
@@ -126,6 +127,8 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   const scannerVideoRef = useRef<HTMLVideoElement | null>(null);
   const scannerStreamRef = useRef<MediaStream | null>(null);
   const scannerFrameRef = useRef<number | null>(null);
+  const scannerControlsRef = useRef<IScannerControls | null>(null);
+  const scannerReaderRef = useRef<BrowserMultiFormatReader | null>(null);
   const [, startTransition] = useTransition();
 
   // Debounce search
@@ -219,6 +222,10 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
       window.cancelAnimationFrame(scannerFrameRef.current);
       scannerFrameRef.current = null;
     }
+    if (scannerControlsRef.current) {
+      scannerControlsRef.current.stop();
+      scannerControlsRef.current = null;
+    }
     if (scannerStreamRef.current) {
       for (const track of scannerStreamRef.current.getTracks()) track.stop();
       scannerStreamRef.current = null;
@@ -226,6 +233,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     if (scannerVideoRef.current) {
       scannerVideoRef.current.srcObject = null;
     }
+    setScannerCameraActive(false);
   }, []);
 
   const fetchProductByBarcode = useCallback(async (barcode: string) => {
@@ -259,64 +267,95 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     setScannerStatus("מבקש הרשאת מצלמה...");
 
     const BarcodeDetectorApi = (window as WindowWithBarcodeDetector).BarcodeDetector;
-    if (!navigator.mediaDevices?.getUserMedia || !BarcodeDetectorApi) {
-      setScannerError("סריקת ברקוד נתמכת כרגע רק בדפדפנים ניידים עם תמיכה במצלמה וב-BarcodeDetector.");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScannerError("סריקת ברקוד דורשת גישה למצלמה, אך הדפדפן לא תומך ב-getUserMedia.");
       return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
-        },
-        audio: false,
-      });
-      scannerStreamRef.current = stream;
-      setScannerCameraActive(true);
-      if (scannerVideoRef.current) {
-        scannerVideoRef.current.srcObject = stream;
-        await scannerVideoRef.current.play();
-      }
-
-      const detector = new BarcodeDetectorApi({
-        formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"],
-      });
-
-      setScannerStatus("כוון את המצלמה אל הברקוד");
-
-      const scanFrame = async () => {
-        const video = scannerVideoRef.current;
-        if (!video || video.readyState < 2) {
-          scannerFrameRef.current = window.requestAnimationFrame(() => { void scanFrame(); });
-          return;
+      if (BarcodeDetectorApi) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+          },
+          audio: false,
+        });
+        scannerStreamRef.current = stream;
+        setScannerCameraActive(true);
+        if (scannerVideoRef.current) {
+          scannerVideoRef.current.srcObject = stream;
+          await scannerVideoRef.current.play();
         }
 
-        try {
-          const results = await detector.detect(video);
-          const rawValue = results.find(result => result.rawValue?.trim())?.rawValue?.trim();
-          if (rawValue) {
-            setScannerCode(rawValue);
-            setScannerStatus(`נסרק: ${rawValue}`);
-            stopScanner();
-            setScannerCameraActive(false);
-            await fetchProductByBarcode(rawValue);
+        const detector = new BarcodeDetectorApi({
+          formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"],
+        });
+
+        setScannerStatus("כוון את המצלמה אל הברקוד");
+
+        const scanFrame = async () => {
+          const video = scannerVideoRef.current;
+          if (!video || video.readyState < 2) {
+            scannerFrameRef.current = window.requestAnimationFrame(() => { void scanFrame(); });
             return;
           }
-        } catch {
-          setScannerError("סריקת הברקוד נכשלה. אפשר לנסות שוב.");
-          stopScanner();
-          setScannerCameraActive(false);
-          return;
-        }
+
+          try {
+            const results = await detector.detect(video);
+            const rawValue = results.find(result => result.rawValue?.trim())?.rawValue?.trim();
+            if (rawValue) {
+              setScannerCode(rawValue);
+              setScannerStatus(`נסרק: ${rawValue}`);
+              stopScanner();
+              await fetchProductByBarcode(rawValue);
+              return;
+            }
+          } catch {
+            setScannerError("סריקת הברקוד נכשלה. אפשר לנסות שוב.");
+            stopScanner();
+            return;
+          }
+
+          scannerFrameRef.current = window.requestAnimationFrame(() => { void scanFrame(); });
+        };
 
         scannerFrameRef.current = window.requestAnimationFrame(() => { void scanFrame(); });
-      };
+        return;
+      }
 
-      scannerFrameRef.current = window.requestAnimationFrame(() => { void scanFrame(); });
+      if (!scannerVideoRef.current) {
+        throw new Error("Scanner video element is missing");
+      }
+
+      if (!scannerReaderRef.current) {
+        const reader = new BrowserMultiFormatReader();
+        reader.possibleFormats = [
+          BarcodeFormat.EAN_13,
+          BarcodeFormat.EAN_8,
+          BarcodeFormat.UPC_A,
+          BarcodeFormat.UPC_E,
+          BarcodeFormat.CODE_128,
+        ];
+        scannerReaderRef.current = reader;
+      }
+
+      setScannerStatus("כוון את המצלמה אל הברקוד");
+      setScannerCameraActive(true);
+      let handled = false;
+      scannerControlsRef.current = await scannerReaderRef.current.decodeFromVideoDevice(undefined, scannerVideoRef.current, (result, _error, controls) => {
+        if (handled) return;
+        const rawValue = result?.getText()?.trim();
+        if (!rawValue) return;
+        handled = true;
+        scannerControlsRef.current = controls;
+        setScannerCode(rawValue);
+        setScannerStatus(`נסרק: ${rawValue}`);
+        stopScanner();
+        void fetchProductByBarcode(rawValue);
+      });
     } catch {
       setScannerError("לא הצלחנו לפתוח את המצלמה. בדוק הרשאות מצלמה ונסה שוב.");
       stopScanner();
-      setScannerCameraActive(false);
     }
   }, [fetchProductByBarcode, stopScanner]);
 
