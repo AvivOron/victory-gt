@@ -633,8 +633,6 @@ def delete_stale_promos(branch_id: str, fresh_promo_ids: set[str]) -> None:
 
 # ── Image upload ──────────────────────────────────────────────────────────────
 
-# ── Image upload ──────────────────────────────────────────────────────────────
-
 def list_uploaded_image_codes() -> set[str]:
     """Return item codes already uploaded to Vercel Blob by listing the products/ prefix."""
     if not BLOB_READ_WRITE_TOKEN:
@@ -659,7 +657,7 @@ def list_uploaded_image_codes() -> set[str]:
                 item_code = pathname[len("products/"):-len(".jpg")]
                 uploaded.add(item_code)
         cursor = data.get("cursor")
-        if not cursor or data.get("hasMore") is False:
+        if not cursor:
             break
     log.info("Vercel Blob: %d images already uploaded", len(uploaded))
     return uploaded
