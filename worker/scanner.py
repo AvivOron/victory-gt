@@ -706,10 +706,10 @@ def git_sync_images() -> None:
     def run(cmd: str) -> str:
         return subprocess.check_output(cmd.split(), cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
     try:
+        # Stage new images before pulling so they survive the rebase
+        run("git add public/products")
         log.info("git pull...")
-        run("git stash")
         run("git pull --rebase")
-        run("git stash pop")
         status = run("git status --short public/products")
         if not status:
             log.info("No new images to commit.")
