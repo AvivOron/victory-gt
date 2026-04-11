@@ -1331,10 +1331,22 @@ function BarcodeScannerModal({
           </button>
         </div>
 
-        {cameraActive && (
+        {(cameraActive || !product) && (
           <div className="relative mx-4 overflow-hidden rounded-2xl border border-white/10 bg-black">
-            <video ref={videoRef} className="aspect-[3/4] w-full object-cover" playsInline muted autoPlay />
-            <div className="pointer-events-none absolute inset-x-8 top-1/2 h-24 -translate-y-1/2 rounded-2xl border-2 border-[#e31837] shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
+            <video
+              ref={videoRef}
+              className={`aspect-[3/4] w-full object-cover ${cameraActive ? "" : "invisible"}`}
+              playsInline
+              muted
+              autoPlay
+            />
+            {cameraActive ? (
+              <div className="pointer-events-none absolute inset-x-8 top-1/2 h-24 -translate-y-1/2 rounded-2xl border-2 border-[#e31837] shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-white/70">
+                המצלמה כבויה כרגע
+              </div>
+            )}
           </div>
         )}
 
