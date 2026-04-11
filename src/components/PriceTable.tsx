@@ -206,6 +206,16 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     fetchShoppingList();
   }, [fetchShoppingList]);
 
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchShoppingList();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [fetchShoppingList]);
+
   const fetchHousehold = useCallback(async () => {
     if (status !== "authenticated") {
       setHousehold(null);
