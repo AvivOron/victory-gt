@@ -3,37 +3,33 @@
 ## Architecture
 
 ```
-Raspberry Pi (Python worker)
+Python worker
   └── Downloads XML.gz from laibcatalog.co.il twice daily
   └── Parses prices + promos
-  └── Upserts to Turso (libSQL cloud)
+  └── Upserts to Neon Postgres
         │
         └──► Next.js app (Vercel)
-               └── Reads from Turso
-               └── Renders price table
+               └── Reads from Neon
+               └── Renders landing page, price table, promo modal, favourites, shopping list
 ```
 
-## 1. Turso DB
+## 1. Database
 
-```bash
-# Install Turso CLI
-curl -sSfL https://get.tur.so/install.sh | bash
+Provision a Postgres database, for example in Neon, and apply `turso_schema.sql` with your preferred SQL client.
 
-# Log in
-turso auth login
+Required application env:
 
-# Create DB
-turso db create victory-gt
+- `DATABASE_URL`
+- `GANEI_TIKVA_BRANCH_ID`
+- `NEXTAUTH_SECRET`
+- `NEXTAUTH_URL`
+- `VERCEL`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
 
-# Get connection URL and token
-turso db show victory-gt --url     # → libsql://victory-gt-xxxx.turso.io
-turso db tokens create victory-gt  # → auth token
+The app expects `DATABASE_URL` to be a Postgres connection string.
 
-# Create tables
-turso db shell victory-gt < turso_schema.sql
-```
-
-## 2. Raspberry Pi worker
+## 2. Worker
 
 ```bash
 cd victory-gt/worker
@@ -42,7 +38,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# Edit .env — add TURSO_DB_URL and TURSO_AUTH_TOKEN
+# Edit .env — add DATABASE_URL
 # Optional: add GEMINI_API_KEY to categorize products during scans
 
 # First run — discovers branch ID
@@ -99,6 +95,13 @@ If local dev starts on a different port, update the same full path, for example 
 
 Important: for this app on Vercel, set `VERCEL` to an empty value. With `next-auth` v4 and a `basePath`, leaving `VERCEL` populated can make the OAuth callback drop `/victory-gt` and fall back to `/api/auth`.
 
+## 4. Current UX behavior
+
+- Products and promo items with `is_available=false` are visually faded.
+- Trying to add an unavailable product to the shopping list shows an out-of-stock warning instead of adding it.
+- The same out-of-stock behavior applies in the main price table and inside the promo modal.
+- Shopping list and favourites require Google authentication.
+
 ## AI product categories
 
 Set `GEMINI_API_KEY` in `worker/.env` to let the scanner categorize products. The scanner stores results in `worker/category_cache.json`, so existing products are not re-sent to Gemini on every scan.
@@ -120,6 +123,6 @@ CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 | Table | Primary key | Notes |
 |-------|-------------|-------|
 | `branches` | `branch_id` | Store metadata |
-| `products` | `item_code, branch_id` | All prices, optional AI `category` |
+| `products` | `item_code, branch_id` | All prices, optional AI `category`, `is_available` drives fade/out-of-stock UX |
 | `promos` | `promotion_id, branch_id` | Active promotions, `item_codes` is a JSON array stored as text |
 | `favourites` | `user_id, item_code, branch_id` | Google-authenticated saved products |

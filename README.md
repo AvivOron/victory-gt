@@ -1,36 +1,86 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Victory Ganei Tikva
 
-## Getting Started
+Price and promotions viewer for the Victory branch in Ganei Tikva. The app reads branch data from Postgres, renders a searchable price table and promo explorer, and lets signed-in users save favourites and manage a shopping list.
 
-First, run the development server:
+## Current product behavior
+
+- Search by product name, barcode, or manufacturer
+- Filter by AI-generated category
+- Browse active promos and inspect all products in a promo modal
+- Save favourites and a shopping list with Google sign-in
+- Show promo labels inside the shopping list
+- Fade unavailable products and block adding them to the cart with an out-of-stock warning
+
+## Stack
+
+- Next.js App Router
+- TypeScript
+- Tailwind CSS v4
+- Neon Postgres via `@neondatabase/serverless`
+- NextAuth v4 with Google OAuth
+- Python worker for price and promo ingestion
+
+## Local development
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Create local env:
+
+```bash
+cp .env.local.example .env.local
+```
+
+3. Fill in:
+
+```bash
+DATABASE_URL=
+GANEI_TIKVA_BRANCH_ID=
+NEXTAUTH_SECRET=
+NEXTAUTH_URL=http://localhost:3000/victory-gt/api/auth
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+VERCEL=
+```
+
+4. Run the app:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open `http://localhost:3000/victory-gt`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Data flow
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```text
+Worker -> downloads official XML files -> parses products and promos -> upserts Postgres
+Next.js app -> reads products/promos/favourites/shopping list -> renders landing + prices UI
+```
 
-## Learn More
+## Key paths
 
-To learn more about Next.js, take a look at the following resources:
+- `src/app/page.tsx` and `src/components/LandingHero.tsx`: landing page
+- `src/app/prices/page.tsx`: main prices page
+- `src/components/PriceTable.tsx`: prices, promos, favourites, shopping list, promo modal
+- `src/app/api/products/route.ts`: products API with promo enrichment
+- `src/app/api/promos/route.ts`: promos API with enriched promo items and availability
+- `src/app/api/shopping-list/route.ts`: signed-in shopping list API
+- `src/lib/db.ts`: shared DB client and TypeScript interfaces
+- `worker/scanner.py`: ingestion worker
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- The app is mounted under `/victory-gt`.
+- Product availability comes from `products.is_available`.
+- Promo modal items now include availability and use the same out-of-stock handling as the main table.
+- For full setup and deployment details, see [SETUP.md](./SETUP.md).
 
-## Deploy on Vercel
+## Deployment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The app is intended for Vercel deployment with a Neon database and a separately scheduled worker process.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Use `npm run build` before deploying production changes.

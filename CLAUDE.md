@@ -16,6 +16,8 @@ A Next.js 16 grocery price comparison app (Israeli market). TypeScript + Tailwin
 - `db.execute({ sql, args })` — use `?` placeholders (auto-converted to `$1`, `$2`, ...)
 - Primary keys: `products(item_code, branch_id)`, `promos(promotion_id, branch_id)`, `favourites(user_id, item_code, branch_id)`
 - `promos.item_codes` is a JSON string — parse with `JSON.parse()`
+- `products.is_available` is the source of truth for faded unavailable items and add-to-cart blocking
+- `src/app/api/promos/route.ts` enriches promo modal items with availability as well
 
 ## Auth
 - Session via JWT; `session.user.id` holds the Google `providerAccountId`
