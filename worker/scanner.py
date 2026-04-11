@@ -62,6 +62,11 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
+BLOB_READ_WRITE_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN", "")
+BLOB_STORE_URL = "https://1xwed3vbdtn2bscw.public.blob.vercel-storage.com"
+PRICEZ_IMAGE_URL = "https://m.pricez.co.il/ProductPictures/{item_code}.jpg"
+IMAGE_BATCH = 8   # match SESSION pool_maxsize
+
 
 MAX_WORKERS = 4  # conservative for Raspberry Pi
 BATCH = 200      # rows per INSERT batch (SQLite has 999-param limit; 200*8cols=1600 — use individual upserts)
@@ -628,6 +633,82 @@ def delete_stale_promos(branch_id: str, fresh_promo_ids: set[str]) -> None:
 
 # ── Image upload ──────────────────────────────────────────────────────────────
 
+# ── Image upload ──────────────────────────────────────────────────────────────
+
+def list_uploaded_image_codes() -> set[str]:
+    """Return item codes already uploaded to Vercel Blob by listing the products/ prefix."""
+    if not BLOB_READ_WRITE_TOKEN:
+        return set()
+    uploaded = set()
+    cursor = None
+    while True:
+        params = {"prefix": "products/", "limit": 1000}
+        if cursor:
+            params["cursor"] = cursor
+        r = requests.get(
+            "https://blob.vercel-storage.com",
+            params=params,
+            headers={"Authorization": f"Bearer {BLOB_READ_WRITE_TOKEN}"},
+            timeout=30,
+        )
+        r.raise_for_status()
+        data = r.json()
+        for blob in data.get("blobs", []):
+            pathname = blob.get("pathname", "")
+            if pathname.startswith("products/") and pathname.endswith(".jpg"):
+                item_code = pathname[len("products/"):-len(".jpg")]
+                uploaded.add(item_code)
+        cursor = data.get("cursor")
+        if not cursor or data.get("hasMore") is False:
+            break
+    log.info("Vercel Blob: %d images already uploaded", len(uploaded))
+    return uploaded
+
+
+def upload_image_to_blob(item_code: str, image_bytes: bytes) -> bool:
+    """Upload image bytes to Vercel Blob. Returns True on success."""
+    pathname = f"products/{item_code}.jpg"
+    r = requests.put(
+        f"https://blob.vercel-storage.com/{pathname}",
+        data=image_bytes,
+        headers={
+            "Authorization": f"Bearer {BLOB_READ_WRITE_TOKEN}",
+            "Content-Type": "image/jpeg",
+            "x-add-random-suffix": "0",
+        },
+        timeout=30,
+    )
+    r.raise_for_status()
+    return True
+
+
+def fetch_and_upload_images(item_codes: list[str]) -> None:
+    """Fetch images from pricez and upload to Vercel Blob for the given item codes."""
+    if not BLOB_READ_WRITE_TOKEN:
+        log.info("BLOB_READ_WRITE_TOKEN not set — skipping image upload")
+        return
+    if not item_codes:
+        log.info("No new images to upload.")
+        return
+
+    log.info("Uploading images for %d products...", len(item_codes))
+
+    def fetch_one(item_code: str) -> bool:
+        url = PRICEZ_IMAGE_URL.format(item_code=item_code)
+        try:
+            r = SESSION.get(url, timeout=15)
+            if r.status_code == 404:
+                return False
+            r.raise_for_status()
+            return upload_image_to_blob(item_code, r.content)
+        except Exception as e:
+            log.debug("Image fetch/upload failed for %s: %s", item_code, e)
+            return False
+
+    success = sum(1 for ok in ThreadPoolExecutor(max_workers=IMAGE_BATCH).map(fetch_one, item_codes) if ok)
+    log.info("Images uploaded: %d / %d", success, len(item_codes))
+
+
 # ── Main scan ─────────────────────────────────────────────────────────────────
 def run_scan() -> None:
     log.info("=== Starting Victory GT scan ===")
@@ -677,6 +758,11 @@ def run_scan() -> None:
         delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
         with open(LAST_FILES_CACHE, "w") as fh:
             json.dump(branch_files, fh)
+
+    all_codes = {r["item_code"] for r in db_query("SELECT DISTINCT item_code FROM products WHERE branch_id = %s AND is_available = TRUE", [branch_id])}
+    already_uploaded = list_uploaded_image_codes()
+    missing = [code for code in all_codes if code not in already_uploaded]
+    fetch_and_upload_images(missing)
 
     log.info("=== Scan complete in %.1fs ===", time.time() - start)
 
