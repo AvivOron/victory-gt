@@ -39,6 +39,7 @@ interface ShoppingListItem {
   item_price: number;
   quantity: number;
   checked: boolean;
+  category?: string | null;
   promo_label?: string | null;
 }
 
@@ -839,6 +840,14 @@ function ShoppingListView({
   const unchecked = items.filter(i => !i.checked);
   const checked = items.filter(i => i.checked);
   const total = items.reduce((sum, i) => sum + i.item_price * i.quantity, 0);
+  const groupByCategory = (list: ShoppingListItem[]) => {
+    const groups = new Map<string, ShoppingListItem[]>();
+    for (const item of list) {
+      const categoryName = item.category?.trim() || "ללא קטגוריה";
+      groups.set(categoryName, [...(groups.get(categoryName) ?? []), item]);
+    }
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b, "he"));
+  };
 
   if (items.length === 0) {
     return (
@@ -869,14 +878,24 @@ function ShoppingListView({
       </div>
 
       <div className="space-y-2">
-        {unchecked.map(item => (
-          <ShoppingListRow key={item.item_code} item={item} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} />
+        {groupByCategory(unchecked).map(([categoryName, categoryItems]) => (
+          <div key={`unchecked-${categoryName}`} className="space-y-2">
+            <p className="px-1 pt-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{categoryName}</p>
+            {categoryItems.map(item => (
+              <ShoppingListRow key={item.item_code} item={item} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} />
+            ))}
+          </div>
         ))}
         {checked.length > 0 && (
           <>
             <p className="pt-2 pb-1 px-1 text-xs font-semibold text-gray-400 uppercase tracking-wide">נאסף</p>
-            {checked.map(item => (
-              <ShoppingListRow key={item.item_code} item={item} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} />
+            {groupByCategory(checked).map(([categoryName, categoryItems]) => (
+              <div key={`checked-${categoryName}`} className="space-y-2">
+                <p className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-300">{categoryName}</p>
+                {categoryItems.map(item => (
+                  <ShoppingListRow key={item.item_code} item={item} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} />
+                ))}
+              </div>
             ))}
           </>
         )}

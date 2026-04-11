@@ -24,12 +24,35 @@ export async function GET() {
     item_price: Number(row.item_price ?? 0),
     quantity: Number(row.quantity ?? 1),
     checked: row.checked === 1 || row.checked === true,
+    category: null as string | null,
     promo_label: null as string | null,
   }));
 
-  // Fetch active promos for cart item codes
+  // Fetch category and active promo metadata for cart item codes.
   if (items.length > 0) {
     const itemCodes = items.map(i => i.item_code);
+    const placeholders = itemCodes.map(() => "?").join(",");
+    const productConditions = [`item_code IN (${placeholders})`];
+    const productArgs: string[] = [...itemCodes];
+    if (BRANCH) {
+      productConditions.push("branch_id = ?");
+      productArgs.push(BRANCH);
+    }
+    const productResult = await db.execute({
+      sql: `SELECT item_code, category FROM products WHERE ${productConditions.join(" AND ")}`,
+      args: productArgs,
+    });
+    const categoryByCode = new Map<string, string | null>();
+    for (const row of productResult.rows) {
+      categoryByCode.set(
+        String(row.item_code ?? ""),
+        row.category == null ? null : String(row.category)
+      );
+    }
+    for (const item of items) {
+      item.category = categoryByCode.get(item.item_code) ?? null;
+    }
+
     const conditions = itemCodes.map(() => "item_codes LIKE ?").join(" OR ");
     const args: string[] = itemCodes.map(code => `%"${code}"%`);
     if (BRANCH) args.push(BRANCH);
