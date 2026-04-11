@@ -27,6 +27,8 @@ from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from xml.etree import ElementTree as ET
 
+import subprocess
+
 import requests
 import schedule
 import psycopg2
@@ -62,10 +64,14 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
-BLOB_READ_WRITE_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN", "")
-BLOB_STORE_URL = "https://1xwed3vbdtn2bscw.public.blob.vercel-storage.com"
 PRICEZ_IMAGE_URL = "https://m.pricez.co.il/ProductPictures/{item_code}.jpg"
-IMAGE_BATCH = 8   # match SESSION pool_maxsize
+IMAGE_BATCH = 8
+
+IMAGES_DIR = os.path.join(_DIR, "images")
+PUBLIC_DIR = os.path.join(_DIR, "..", "public", "products")
+REPO_DIR = os.path.join(_DIR, "..")
+IMAGE_SIZE = 300
+IMAGE_QUALITY = 70
 
 
 MAX_WORKERS = 4  # conservative for Raspberry Pi
@@ -631,88 +637,105 @@ def delete_stale_promos(branch_id: str, fresh_promo_ids: set[str]) -> None:
     log.info("Stale promos deleted.")
 
 
-# ── Image upload ──────────────────────────────────────────────────────────────
+# ── Image fetch + compress ────────────────────────────────────────────────────
 
-def list_uploaded_image_codes() -> set[str]:
-    """Return item codes already uploaded to Vercel Blob by listing the products/ prefix."""
-    if not BLOB_READ_WRITE_TOKEN:
-        return set()
-    uploaded = set()
-    cursor = None
-    while True:
-        params = {"prefix": "products/", "limit": 1000}
-        if cursor:
-            params["cursor"] = cursor
-        r = requests.get(
-            "https://blob.vercel-storage.com",
-            params=params,
-            headers={"Authorization": f"Bearer {BLOB_READ_WRITE_TOKEN}"},
-            timeout=30,
-        )
-        r.raise_for_status()
-        data = r.json()
-        for blob in data.get("blobs", []):
-            pathname = blob.get("pathname", "")
-            if pathname.startswith("products/") and pathname.endswith(".jpg"):
-                item_code = pathname[len("products/"):-len(".jpg")]
-                uploaded.add(item_code)
-        cursor = data.get("cursor")
-        if not cursor:
-            break
-    log.info("Vercel Blob: %d images already uploaded", len(uploaded))
-    return uploaded
-
-
-def upload_image_to_blob(item_code: str, image_bytes: bytes) -> bool:
-    """Upload image bytes to Vercel Blob. Returns True on success."""
-    pathname = f"products/{item_code}.jpg"
-    r = requests.put(
-        f"https://blob.vercel-storage.com/{pathname}",
-        data=image_bytes,
-        headers={
-            "Authorization": f"Bearer {BLOB_READ_WRITE_TOKEN}",
-            "Content-Type": "image/jpeg",
-            "x-add-random-suffix": "0",
-            "x-allow-overwrite": "1",
-            "x-access": "public",
-        },
-        timeout=30,
-    )
-    r.raise_for_status()
-    return True
-
-
-def fetch_and_upload_images(item_codes: list[str]) -> None:
-    """Fetch images from pricez and upload to Vercel Blob for the given item codes."""
-    if not BLOB_READ_WRITE_TOKEN:
-        log.info("BLOB_READ_WRITE_TOKEN not set — skipping image upload")
-        return
-    if not item_codes:
-        log.info("No new images to upload.")
-        return
-
-    log.info("Uploading images for %d products...", len(item_codes))
-
-    not_found = 0
-    errors = 0
-
-    def fetch_one(item_code: str) -> bool:
-        nonlocal not_found, errors
-        url = PRICEZ_IMAGE_URL.format(item_code=item_code)
+def fetch_image(item_code: str) -> str:
+    """Download raw image from pricez to IMAGES_DIR. Returns 'ok', 'skip', or 'err'."""
+    dest = os.path.join(IMAGES_DIR, f"{item_code}.jpg")
+    if os.path.exists(dest):
+        return "ok"
+    url = PRICEZ_IMAGE_URL.format(item_code=item_code)
+    for attempt in range(3):
         try:
             r = SESSION.get(url, timeout=15)
             if r.status_code == 404:
-                not_found += 1
-                return False
+                return "skip"
+            if r.status_code == 403:
+                time.sleep(2 ** attempt)
+                continue
             r.raise_for_status()
-            return upload_image_to_blob(item_code, r.content)
+            with open(dest, "wb") as f:
+                f.write(r.content)
+            return "ok"
         except Exception as e:
-            errors += 1
-            log.warning("Image fetch/upload failed for %s: %s", item_code, e)
-            return False
+            log.warning("Image fetch failed %s (attempt %d): %s", item_code, attempt + 1, e)
+            time.sleep(2 ** attempt)
+    return "err"
 
-    success = sum(1 for ok in ThreadPoolExecutor(max_workers=IMAGE_BATCH).map(fetch_one, item_codes) if ok)
-    log.info("Images uploaded: %d / %d (404: %d, errors: %d)", success, len(item_codes), not_found, errors)
+
+def compress_image(item_code: str) -> bool:
+    """Compress raw image and copy to PUBLIC_DIR. Returns True if newly copied."""
+    from PIL import Image as PILImage
+    src = os.path.join(IMAGES_DIR, f"{item_code}.jpg")
+    dst = os.path.join(PUBLIC_DIR, f"{item_code}.jpg")
+    if not os.path.exists(src) or os.path.exists(dst):
+        return False
+    try:
+        img = PILImage.open(src)
+        if img.mode in ("RGBA", "LA", "P"):
+            bg = PILImage.new("RGB", img.size, (255, 255, 255))
+            if img.mode == "P":
+                img = img.convert("RGBA")
+            bg.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+            img = bg
+        else:
+            img = img.convert("RGB")
+        img.thumbnail((IMAGE_SIZE, IMAGE_SIZE))
+        img.save(dst, "JPEG", quality=IMAGE_QUALITY, optimize=True)
+        return True
+    except Exception as e:
+        log.warning("Compress failed %s: %s", item_code, e)
+        return False
+
+
+def git_sync_images() -> None:
+    """Pull latest, commit new product images, and push."""
+    def run(cmd: str) -> str:
+        return subprocess.check_output(cmd.split(), cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
+    try:
+        log.info("git pull...")
+        run("git pull --rebase")
+        status = run("git status --short public/products")
+        if not status:
+            log.info("No new images to commit.")
+            return
+        new_count = len(status.strip().splitlines())
+        run("git add public/products")
+        run(f'git commit -m "add {new_count} product images [ci skip]"')
+        log.info("git push...")
+        run("git push")
+        log.info("Pushed %d new images to git.", new_count)
+    except subprocess.CalledProcessError as e:
+        log.warning("git sync failed: %s", e.output.decode())
+
+
+def sync_images(branch_id: str) -> None:
+    os.makedirs(IMAGES_DIR, exist_ok=True)
+    os.makedirs(PUBLIC_DIR, exist_ok=True)
+
+    all_codes = [r["item_code"] for r in db_query(
+        "SELECT DISTINCT item_code FROM products WHERE branch_id = %s AND is_available = TRUE", [branch_id]
+    )]
+    missing = [c for c in all_codes if not os.path.exists(os.path.join(PUBLIC_DIR, f"{c}.jpg"))]
+
+    log.info("Images missing from repo: %d", len(missing))
+    if not missing:
+        return
+
+    log.info("Fetching %d images from pricez...", len(missing))
+    ok = skip = err = 0
+    with ThreadPoolExecutor(max_workers=IMAGE_BATCH) as pool:
+        for result in pool.map(fetch_image, missing):
+            if result == "ok": ok += 1
+            elif result == "skip": skip += 1
+            else: err += 1
+    log.info("Image fetch done. ok=%d, skip=%d, err=%d", ok, skip, err)
+
+    copied = sum(1 for c in missing if compress_image(c))
+    log.info("Images compressed and ready: %d", copied)
+
+    if copied:
+        git_sync_images()
 
 
 # ── Main scan ─────────────────────────────────────────────────────────────────
@@ -765,10 +788,7 @@ def run_scan() -> None:
         with open(LAST_FILES_CACHE, "w") as fh:
             json.dump(branch_files, fh)
 
-    all_codes = {r["item_code"] for r in db_query("SELECT DISTINCT item_code FROM products WHERE branch_id = %s AND is_available = TRUE", [branch_id])}
-    already_uploaded = list_uploaded_image_codes()
-    missing = [code for code in all_codes if code not in already_uploaded]
-    fetch_and_upload_images(missing)
+    sync_images(branch_id)
 
     log.info("=== Scan complete in %.1fs ===", time.time() - start)
 
