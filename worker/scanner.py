@@ -673,6 +673,8 @@ def upload_image_to_blob(item_code: str, image_bytes: bytes) -> bool:
             "Authorization": f"Bearer {BLOB_READ_WRITE_TOKEN}",
             "Content-Type": "image/jpeg",
             "x-add-random-suffix": "0",
+            "x-allow-overwrite": "1",
+            "x-access": "public",
         },
         timeout=30,
     )
