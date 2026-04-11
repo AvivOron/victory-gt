@@ -764,18 +764,29 @@ def sync_images(branch_id: str) -> None:
 
     # Pull latest before writing new files so commit is on top of remote
     def _git_pull() -> None:
+        def run(cmd: str) -> str:
+            return subprocess.check_output(cmd.split(), cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
         try:
-            out = subprocess.check_output("git pull --rebase".split(), cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
-            log.info("git pull: %s", out)
+            run("git add public/products")
+            run("git pull --rebase")
+            log.info("git pull done")
         except subprocess.CalledProcessError as e:
             log.warning("git pull failed: %s", e.output.decode())
 
     _git_pull()
 
     copied = sum(1 for c in missing if compress_image(c))
+
+    # Also commit any untracked images already in public/products/ that aren't in git yet
+    def run(cmd: str) -> str:
+        return subprocess.check_output(cmd.split(), cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
+    untracked = run("git ls-files --others --exclude-standard public/products").strip().splitlines()
+    if untracked:
+        log.info("%d untracked images found in public/products, adding to commit", len(untracked))
+
     log.info("Images compressed and ready: %d", copied)
 
-    if copied:
+    if copied or untracked:
         git_sync_images()
 
 
