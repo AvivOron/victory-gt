@@ -59,6 +59,8 @@ _DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_CACHE = os.path.join(_DIR, "filelist_cache.json")
 CATEGORY_CACHE = os.path.join(_DIR, "category_cache.json")
 LAST_FILES_CACHE = os.path.join(_DIR, "last_files_cache.json")
+IMAGE_404_CACHE = os.path.join(_DIR, "image_404_cache.json")
+IMAGE_404_TTL_DAYS = 7
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
@@ -639,6 +641,17 @@ def delete_stale_promos(branch_id: str, fresh_promo_ids: set[str]) -> None:
 
 # ── Image fetch + compress ────────────────────────────────────────────────────
 
+def load_404_cache() -> dict[str, str]:
+    try:
+        with open(IMAGE_404_CACHE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_404_cache(cache: dict[str, str]) -> None:
+    with open(IMAGE_404_CACHE, "w") as f:
+        json.dump(cache, f)
+
 def fetch_image(item_code: str) -> str:
     """Download raw image from pricez to IMAGES_DIR. Returns 'ok', 'skip', or 'err'."""
     dest = os.path.join(IMAGES_DIR, f"{item_code}.jpg")
@@ -722,14 +735,32 @@ def sync_images(branch_id: str) -> None:
     if not missing:
         return
 
-    log.info("Fetching %d images from pricez...", len(missing))
-    ok = skip = err = 0
+    # Filter out codes that returned 404 recently
+    cache_404 = load_404_cache()
+    cutoff = (datetime.now(timezone.utc).timestamp()) - IMAGE_404_TTL_DAYS * 86400
+    to_fetch = [c for c in missing if cache_404.get(c, 0) < cutoff]
+    skipped_404 = len(missing) - len(to_fetch)
+    if skipped_404:
+        log.info("Skipping %d codes with recent 404 (within %d days)", skipped_404, IMAGE_404_TTL_DAYS)
+
+    log.info("Fetching %d images from pricez...", len(to_fetch))
+    ok = err = 0
+    new_404s: list[str] = []
     with ThreadPoolExecutor(max_workers=IMAGE_BATCH) as pool:
-        for result in pool.map(fetch_image, missing):
+        for i, (code, result) in enumerate(zip(to_fetch, pool.map(fetch_image, to_fetch)), 1):
             if result == "ok": ok += 1
-            elif result == "skip": skip += 1
+            elif result == "skip": new_404s.append(code)
             else: err += 1
-    log.info("Image fetch done. ok=%d, skip=%d, err=%d", ok, skip, err)
+            if i % 100 == 0 or i == len(to_fetch):
+                log.info("%d/%d processed (ok=%d, 404=%d, err=%d)", i, len(to_fetch), ok, len(new_404s), err)
+
+    if new_404s:
+        now_ts = datetime.now(timezone.utc).timestamp()
+        for code in new_404s:
+            cache_404[code] = now_ts
+        save_404_cache(cache_404)
+
+    log.info("Image fetch done. ok=%d, 404=%d, err=%d", ok, len(new_404s), err)
 
     copied = sum(1 for c in missing if compress_image(c))
     log.info("Images compressed and ready: %d", copied)
