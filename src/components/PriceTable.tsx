@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useTransition, useRef } from "react";
+import NextImage from "next/image";
 import type { Product, Promo, PromoOriginalItem } from "@/lib/db";
 import { signIn, useSession } from "next-auth/react";
 import { BarcodeFormat, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
@@ -1047,10 +1048,12 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                       {(promo.original_items ?? []).length > 0 && (
                         <div className="flex flex-shrink-0 gap-1">
                           {(promo.original_items ?? []).slice(0, 1).map(item => (
-                            <img
+                            <NextImage
                               key={item.item_code}
                               src={`/victory-gt/products/${item.item_code}.jpg`}
                               alt={item.item_name}
+                              width={48}
+                              height={48}
                               className="h-12 w-12 rounded-md border border-gray-100 object-contain bg-white"
                               onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
                             />
@@ -1606,11 +1609,14 @@ function ShoppingListRow({
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 cursor-zoom-out"
           onClick={() => setLightbox(false)}
         >
-          <img
-            src={`/victory-gt/products/${item.item_code}.jpg`}
-            alt={item.item_name}
-            className="max-h-[80vh] max-w-[80vw] rounded-xl object-contain"
-          />
+          <div className="relative max-h-[80vh] max-w-[80vw] h-[80vh] w-[80vw]">
+            <NextImage
+              src={`/victory-gt/products/${item.item_code}.jpg`}
+              alt={item.item_name}
+              fill
+              className="rounded-xl object-contain"
+            />
+          </div>
         </div>
       )}
     <div className={`grid grid-cols-[auto_auto_1fr_auto_auto] items-center gap-3 rounded-lg border bg-white p-4 shadow-sm transition-colors ${item.checked ? "border-gray-100 opacity-60" : "border-gray-200"}`}>
@@ -1624,9 +1630,11 @@ function ShoppingListRow({
         {item.checked && <span className="text-white text-xs font-bold leading-none">✓</span>}
       </button>
       {/* product image */}
-      <img
+      <NextImage
         src={`/victory-gt/products/${item.item_code}.jpg`}
         alt={item.item_name}
+        width={40}
+        height={40}
         className="h-10 w-10 flex-shrink-0 rounded-md border border-gray-100 object-contain bg-white cursor-zoom-in"
         onClick={() => setLightbox(true)}
         onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
@@ -1696,13 +1704,18 @@ function DiscountModal({
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <img
-              src={`/victory-gt/products/${product.item_code}.jpg`}
-              alt={product.item_name}
-              className={`flex-shrink-0 rounded-md border border-gray-100 object-contain bg-white cursor-pointer transition-all duration-200 ${expandedImage === product.item_code ? "h-40 w-40" : "h-16 w-16"}`}
+            <div
+              className={`relative flex-shrink-0 rounded-md border border-gray-100 bg-white cursor-pointer transition-all duration-200 ${expandedImage === product.item_code ? "h-40 w-40" : "h-16 w-16"}`}
               onClick={e => { e.stopPropagation(); setExpandedImage(expandedImage === product.item_code ? null : product.item_code); }}
-              onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-            />
+            >
+              <NextImage
+                src={`/victory-gt/products/${product.item_code}.jpg`}
+                alt={product.item_name}
+                fill
+                className="object-contain"
+                onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+              />
+            </div>
             <div>
               <h2 className="text-lg font-black text-[#171717]">{product.item_name}</h2>
               <p className="mt-1 text-sm text-gray-500">
@@ -1750,13 +1763,18 @@ function DiscountModal({
                       {sharedItems.map(item => (
                         <div key={item.item_code} className="rounded-lg border border-gray-200 bg-white p-2 text-sm text-gray-600">
                           <div className="flex gap-2">
-                            <img
-                              src={`/victory-gt/products/${item.item_code}.jpg`}
-                              alt={item.item_name}
-                              className={`flex-shrink-0 rounded-md border border-gray-100 object-contain bg-white cursor-pointer transition-all duration-200 ${expandedImage === item.item_code ? "h-32 w-32" : "h-12 w-12"}`}
+                            <div
+                              className={`relative flex-shrink-0 rounded-md border border-gray-100 bg-white cursor-pointer transition-all duration-200 ${expandedImage === item.item_code ? "h-32 w-32" : "h-12 w-12"}`}
                               onClick={() => setExpandedImage(expandedImage === item.item_code ? null : item.item_code)}
-                              onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-                            />
+                            >
+                              <NextImage
+                                src={`/victory-gt/products/${item.item_code}.jpg`}
+                                alt={item.item_name}
+                                fill
+                                className="object-contain"
+                                onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                              />
+                            </div>
                             <div>
                               <p className="font-semibold leading-snug text-[#171717]">{item.item_name || item.item_code}</p>
                               <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -1852,13 +1870,18 @@ function PromoModal({
               return (
                 <div key={item.item_code} className={`rounded-lg border border-gray-200 bg-[#fafafa] p-3 ${unavailable ? "opacity-40" : ""}`}>
                   <div className="flex gap-3">
-                    <img
-                      src={`/victory-gt/products/${item.item_code}.jpg`}
-                      alt={item.item_name}
-                      className={`flex-shrink-0 rounded-md border border-gray-100 object-contain bg-white cursor-pointer transition-all duration-200 ${expandedImage === item.item_code ? "h-40 w-40" : "h-16 w-16"}`}
+                    <div
+                      className={`relative flex-shrink-0 rounded-md border border-gray-100 bg-white cursor-pointer transition-all duration-200 ${expandedImage === item.item_code ? "h-40 w-40" : "h-16 w-16"}`}
                       onClick={() => setExpandedImage(expandedImage === item.item_code ? null : item.item_code)}
-                      onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-                    />
+                    >
+                      <NextImage
+                        src={`/victory-gt/products/${item.item_code}.jpg`}
+                        alt={item.item_name}
+                        fill
+                        className="object-contain"
+                        onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                      />
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                         <p className="font-bold text-[#171717]">{item.item_name || item.item_code}</p>
@@ -1963,8 +1986,7 @@ function ProductImage({ itemCode, itemName, width, height, className }: { itemCo
     return <span className={`block bg-gray-100 rounded ${className}`} style={{ width, height }} />;
   }
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <NextImage
       src={`${PRODUCT_IMAGES_BASE}/products/${itemCode}.jpg`}
       alt={itemName}
       width={width}
