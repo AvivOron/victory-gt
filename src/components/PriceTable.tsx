@@ -632,10 +632,11 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
           checked: false,
         }];
       });
+      void fetchShoppingList();
     } finally {
       setShoppingPendingCode(null);
     }
-  }, [promptGoogleSignIn, status]);
+  }, [promptGoogleSignIn, status, fetchShoppingList]);
 
   const decrementCart = useCallback(async (product: { item_code: string }) => {
     setShoppingPendingCode(product.item_code);
