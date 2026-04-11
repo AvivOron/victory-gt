@@ -702,21 +702,19 @@ def compress_image(item_code: str) -> bool:
 
 
 def git_sync_images() -> None:
-    """Pull latest, commit new product images, and push."""
-    def run(cmd: str) -> str:
-        return subprocess.check_output(cmd.split(), cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
+    """Commit new product images and push."""
+    def run(cmd: list[str]) -> str:
+        return subprocess.check_output(cmd, cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
     try:
-        log.info("git pull...")
-        run("git pull --rebase")
-        status = run("git status --short public/products")
+        status = run(["git", "status", "--short", "public/products"])
         if not status:
             log.info("No new images to commit.")
             return
         new_count = len(status.strip().splitlines())
-        run("git add public/products")
-        run(f'git commit -m "add {new_count} product images [ci skip]"')
+        run(["git", "add", "public/products"])
+        run(["git", "commit", "-m", f"add {new_count} product images [ci skip]"])
         log.info("git push...")
-        run("git push")
+        run(["git", "push"])
         log.info("Pushed %d new images to git.", new_count)
     except subprocess.CalledProcessError as e:
         log.warning("git sync failed: %s", e.output.decode())
@@ -764,15 +762,15 @@ def sync_images(branch_id: str) -> None:
 
     # Pull latest before writing new files so commit is on top of remote
     def _git_pull() -> None:
-        def run(cmd: str) -> str:
-            return subprocess.check_output(cmd.split(), cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
+        def run(cmd: list[str]) -> str:
+            return subprocess.check_output(cmd, cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
         try:
             # Commit any already-staged/untracked images before pulling
-            run("git add public/products")
-            staged = run("git diff --cached --name-only public/products")
+            run(["git", "add", "public/products"])
+            staged = run(["git", "diff", "--cached", "--name-only", "public/products"])
             if staged:
-                run('git commit -m "add product images [ci skip]"')
-            run("git pull --rebase")
+                run(["git", "commit", "-m", "add product images [ci skip]"])
+            run(["git", "pull", "--rebase"])
             log.info("git pull done")
         except subprocess.CalledProcessError as e:
             log.warning("git pull failed: %s", e.output.decode())
