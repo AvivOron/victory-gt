@@ -65,7 +65,7 @@ GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMI
 BLOB_READ_WRITE_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN", "")
 BLOB_STORE_URL = "https://1xwed3vbdtn2bscw.public.blob.vercel-storage.com"
 PRICEZ_IMAGE_URL = "https://m.pricez.co.il/ProductPictures/{item_code}.jpg"
-IMAGE_BATCH = 20  # parallel image fetches
+IMAGE_BATCH = 8   # match SESSION pool_maxsize
 
 MAX_WORKERS = 4  # conservative for Raspberry Pi
 BATCH = 200      # rows per INSERT batch (SQLite has 999-param limit; 200*8cols=1600 — use individual upserts)
@@ -682,17 +682,21 @@ def fetch_and_upload_images(branch_id: str) -> None:
             log.debug("Image fetch/upload failed for %s: %s", item_code, e)
             return item_code, None
 
-    success = 0
+    results: list[tuple[str, str]] = []
     with ThreadPoolExecutor(max_workers=IMAGE_BATCH) as pool:
         for item_code, blob_url in pool.map(fetch_one, item_codes):
             if blob_url:
-                db_execute([{
-                    "sql": "UPDATE products SET image_url = %s WHERE item_code = %s",
-                    "args": [blob_url, item_code],
-                }])
-                success += 1
+                results.append((blob_url, item_code))
 
-    log.info("Images uploaded: %d / %d", success, len(item_codes))
+    if results:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "UPDATE products SET image_url = %s WHERE item_code = %s",
+                    results,
+                )
+
+    log.info("Images uploaded: %d / %d", len(results), len(item_codes))
 
 
 # ── Main scan ─────────────────────────────────────────────────────────────────
