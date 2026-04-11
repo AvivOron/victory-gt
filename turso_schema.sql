@@ -73,20 +73,6 @@ CREATE TABLE IF NOT EXISTS household_members (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_household_members_user ON household_members(user_id);
 
-CREATE TABLE IF NOT EXISTS shopping_list (
-  user_id    TEXT,
-  user_email TEXT,
-  item_code  TEXT,
-  item_name  TEXT,
-  item_price REAL,
-  quantity   INTEGER DEFAULT 1,
-  checked    INTEGER DEFAULT 0,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (user_id, item_code)
-);
-
-CREATE INDEX IF NOT EXISTS idx_shopping_list_user ON shopping_list(user_id, created_at);
-
 CREATE TABLE IF NOT EXISTS shopping_list_items (
   household_id     TEXT NOT NULL,
   item_code        TEXT NOT NULL,

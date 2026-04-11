@@ -130,46 +130,6 @@ async function createHouseholdForUser(user: SessionUser): Promise<HouseholdInfo>
   };
 }
 
-async function migrateLegacyCartToHousehold(user: SessionUser, householdId: string) {
-  const legacyRows = await db.execute({
-    sql: `SELECT item_code, item_name, item_price, quantity, checked, created_at
-          FROM shopping_list
-          WHERE user_id = ?`,
-    args: [user.userId],
-  });
-
-  for (const row of legacyRows.rows) {
-    await db.execute({
-      sql: `INSERT INTO shopping_list_items
-              (household_id, item_code, item_name, item_price, quantity, checked, added_by_user_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
-            ON CONFLICT (household_id, item_code) DO UPDATE SET
-              item_name = EXCLUDED.item_name,
-              item_price = EXCLUDED.item_price,
-              quantity = shopping_list_items.quantity + EXCLUDED.quantity,
-              checked = CASE WHEN shopping_list_items.checked = 1 AND EXCLUDED.checked = 1 THEN 1 ELSE 0 END,
-              updated_at = CURRENT_TIMESTAMP`,
-      args: [
-        householdId,
-        String(row.item_code ?? ""),
-        String(row.item_name ?? ""),
-        Number(row.item_price ?? 0),
-        Math.max(1, Number(row.quantity ?? 1)),
-        row.checked === 1 || row.checked === true ? 1 : 0,
-        user.userId,
-        row.created_at ? String(row.created_at) : null,
-      ],
-    });
-  }
-
-  if (legacyRows.rows.length > 0) {
-    await db.execute({
-      sql: `DELETE FROM shopping_list WHERE user_id = ?`,
-      args: [user.userId],
-    });
-  }
-}
-
 export async function getOrCreateCurrentHousehold(user: SessionUser) {
   await ensureHouseholdSchema();
 
@@ -177,8 +137,6 @@ export async function getOrCreateCurrentHousehold(user: SessionUser) {
   if (!household) {
     household = await createHouseholdForUser(user);
   }
-
-  await migrateLegacyCartToHousehold(user, household.householdId);
 
   return household;
 }
