@@ -706,8 +706,6 @@ def git_sync_images() -> None:
     def run(cmd: str) -> str:
         return subprocess.check_output(cmd.split(), cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
     try:
-        # Stage new images before pulling so they survive the rebase
-        run("git add public/products")
         log.info("git pull...")
         run("git pull --rebase")
         status = run("git status --short public/products")
@@ -763,6 +761,16 @@ def sync_images(branch_id: str) -> None:
         save_404_cache(cache_404)
 
     log.info("Image fetch done. ok=%d, 404=%d, err=%d", ok, len(new_404s), err)
+
+    # Pull latest before writing new files so commit is on top of remote
+    def _git_pull() -> None:
+        try:
+            out = subprocess.check_output("git pull --rebase".split(), cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
+            log.info("git pull: %s", out)
+        except subprocess.CalledProcessError as e:
+            log.warning("git pull failed: %s", e.output.decode())
+
+    _git_pull()
 
     copied = sum(1 for c in missing if compress_image(c))
     log.info("Images compressed and ready: %d", copied)
