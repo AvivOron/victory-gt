@@ -41,6 +41,7 @@ worker/*.pyc
 worker/branch_id.txt
 worker/filelist_cache.json
 worker/venv/
+worker/images/
 
 # local database
 *.db

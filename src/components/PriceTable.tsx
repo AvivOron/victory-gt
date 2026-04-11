@@ -5,7 +5,7 @@ import type { Product, Promo, PromoOriginalItem } from "@/lib/db";
 import { signIn, useSession } from "next-auth/react";
 import { BarcodeFormat, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 
-const BLOB_BASE = "https://1xwed3vbdtn2bscw.public.blob.vercel-storage.com";
+const PRODUCT_IMAGES_BASE = "/victory-gt";
 
 type Tab = "prices" | "promos" | "favourites" | "shopping";
 type SortCol = "item_name" | "item_price" | "manufacturer_name" | "item_code";
@@ -1892,7 +1892,7 @@ function ProductImage({ itemCode, itemName, width, height, className }: { itemCo
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={`${BLOB_BASE}/products/${itemCode}.jpg`}
+      src={`${PRODUCT_IMAGES_BASE}/products/${itemCode}.jpg`}
       alt={itemName}
       width={width}
       height={height}
