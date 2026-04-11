@@ -273,18 +273,46 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     }
 
     try {
-      if (BarcodeDetectorApi) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: "environment" },
-          },
+      const openCameraStream = async (preferEnvironment: boolean) => {
+        return navigator.mediaDevices.getUserMedia({
+          video: preferEnvironment
+            ? { facingMode: { ideal: "environment" } }
+            : true,
           audio: false,
         });
+      };
+
+      const attachPreview = async (stream: MediaStream) => {
         scannerStreamRef.current = stream;
         setScannerCameraActive(true);
-        if (scannerVideoRef.current) {
-          scannerVideoRef.current.srcObject = stream;
-          await scannerVideoRef.current.play();
+        if (!scannerVideoRef.current) throw new Error("Scanner video element is missing");
+
+        scannerVideoRef.current.srcObject = stream;
+        await scannerVideoRef.current.play();
+
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < 4000) {
+          const video = scannerVideoRef.current;
+          if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+            return true;
+          }
+          await new Promise(resolve => window.setTimeout(resolve, 200));
+        }
+
+        return false;
+      };
+
+      if (BarcodeDetectorApi) {
+        let stream = await openCameraStream(true);
+        let previewReady = await attachPreview(stream);
+        if (!previewReady) {
+          for (const track of stream.getTracks()) track.stop();
+          setScannerStatus("עובר למצלמת ברירת המחדל...");
+          stream = await openCameraStream(false);
+          previewReady = await attachPreview(stream);
+        }
+        if (!previewReady) {
+          throw new Error("Camera preview did not start");
         }
 
         const detector = new BarcodeDetectorApi({
@@ -340,9 +368,19 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
       }
 
       setScannerStatus("כוון את המצלמה אל הברקוד");
-      setScannerCameraActive(true);
+      let stream = await openCameraStream(true);
+      let previewReady = await attachPreview(stream);
+      if (!previewReady) {
+        for (const track of stream.getTracks()) track.stop();
+        setScannerStatus("עובר למצלמת ברירת המחדל...");
+        stream = await openCameraStream(false);
+        previewReady = await attachPreview(stream);
+      }
+      if (!previewReady) {
+        throw new Error("Camera preview did not start");
+      }
       let handled = false;
-      scannerControlsRef.current = await scannerReaderRef.current.decodeFromVideoDevice(undefined, scannerVideoRef.current, (result, _error, controls) => {
+      scannerControlsRef.current = await scannerReaderRef.current.decodeFromStream(stream, scannerVideoRef.current, (result, _error, controls) => {
         if (handled) return;
         const rawValue = result?.getText()?.trim();
         if (!rawValue) return;
@@ -353,8 +391,10 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
         stopScanner();
         void fetchProductByBarcode(rawValue);
       });
-    } catch {
-      setScannerError("לא הצלחנו לפתוח את המצלמה. בדוק הרשאות מצלמה ונסה שוב.");
+    } catch (error) {
+      const details = error instanceof Error ? error.message : String(error);
+      console.error("Barcode scanner startup failed", error);
+      setScannerError(`לא הצלחנו לפתוח את המצלמה. ${details}`);
       stopScanner();
     }
   }, [fetchProductByBarcode, stopScanner]);
