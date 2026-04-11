@@ -67,7 +67,7 @@ export default async function HomePage() {
       {/* CTA */}
       <div className="border-t border-gray-200 bg-white px-4 py-10 text-center sm:py-14">
         <p className="text-lg font-bold text-[#171717]">מוכנים לבדוק מחירים?</p>
-        <p className="mt-1 text-sm text-gray-500">כל המוצרים והמבצעים של ויקטורי {city} במקום אחד</p>
+        <p className="mt-1 text-sm text-gray-500">כל המוצרים והמבצעים של ויקטורי {city}, כולל סריקת ברקוד ועגלה משותפת למשק הבית</p>
         <Link
           href="/prices"
           className="mt-5 block rounded-lg bg-[#e31837] px-8 py-3 text-base font-bold text-white shadow-sm transition-colors hover:bg-[#c91530] sm:inline-block"

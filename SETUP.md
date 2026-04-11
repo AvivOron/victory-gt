@@ -10,7 +10,7 @@ Python worker
         │
         └──► Next.js app (Vercel)
                └── Reads from Neon
-               └── Renders landing page, price table, promo modal, favourites, shopping list
+               └── Renders landing page, price table, promo modal, barcode scanner, favourites, household shopping list
 ```
 
 ## 1. Database
@@ -101,6 +101,8 @@ Important: for this app on Vercel, set `VERCEL` to an empty value. With `next-au
 - Trying to add an unavailable product to the shopping list shows an out-of-stock warning instead of adding it.
 - The same out-of-stock behavior applies in the main price table and inside the promo modal.
 - Shopping list and favourites require Google authentication.
+- Authenticated users get a household invite code and can join another household cart by entering its code.
+- Mobile users can open the barcode scanner, grant camera access, and resolve a barcode directly to a product card.
 
 ## AI product categories
 
@@ -125,4 +127,7 @@ CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 | `branches` | `branch_id` | Store metadata |
 | `products` | `item_code, branch_id` | All prices, optional AI `category`, `is_available` drives fade/out-of-stock UX |
 | `promos` | `promotion_id, branch_id` | Active promotions, `item_codes` is a JSON array stored as text |
+| `households` | `household_id` | Shared household carts with invite codes |
+| `household_members` | `household_id, user_id` | Household membership and roles |
+| `shopping_list_items` | `household_id, item_code` | Shared cart items keyed by household |
 | `favourites` | `user_id, item_code, branch_id` | Google-authenticated saved products |

@@ -74,6 +74,18 @@ interface BarcodeDetectorCtor {
   new (options?: { formats?: string[] }): BarcodeDetectorLike;
 }
 
+interface BarcodeTrackCapabilities extends MediaTrackCapabilities {
+  focusMode?: string[];
+  zoom?: { min?: number; max?: number };
+}
+
+type BarcodeTrackConstraints = MediaTrackConstraints & {
+  advanced?: Array<{
+    focusMode?: "continuous" | "single-shot" | "manual";
+    zoom?: number;
+  }>;
+};
+
 type WindowWithBarcodeDetector = Window & {
   BarcodeDetector?: BarcodeDetectorCtor;
 };
@@ -276,10 +288,51 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
       const openCameraStream = async (preferEnvironment: boolean) => {
         return navigator.mediaDevices.getUserMedia({
           video: preferEnvironment
-            ? { facingMode: { ideal: "environment" } }
-            : true,
+            ? {
+                facingMode: { ideal: "environment" },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+                frameRate: { ideal: 30, max: 60 },
+              }
+            : {
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+                frameRate: { ideal: 30, max: 60 },
+              },
           audio: false,
         });
+      };
+
+      const configureScannerTrack = async (stream: MediaStream) => {
+        const [track] = stream.getVideoTracks();
+        if (!track || typeof track.applyConstraints !== "function") return;
+
+        const capabilities = typeof track.getCapabilities === "function"
+          ? (track.getCapabilities() as BarcodeTrackCapabilities)
+          : null;
+
+        const advanced: NonNullable<BarcodeTrackConstraints["advanced"]> = [];
+
+        if (capabilities?.focusMode?.includes("continuous")) {
+          advanced.push({ focusMode: "continuous" });
+        } else if (capabilities?.focusMode?.includes("single-shot")) {
+          advanced.push({ focusMode: "single-shot" });
+        }
+
+        const zoomRange = capabilities?.zoom;
+        if (zoomRange?.max && zoomRange.max > 1) {
+          const minZoom = zoomRange.min ?? 1;
+          const preferredZoom = Math.min(2, zoomRange.max);
+          advanced.push({ zoom: Math.max(minZoom, preferredZoom) });
+        }
+
+        if (advanced.length === 0) return;
+
+        try {
+          await track.applyConstraints({ advanced } satisfies BarcodeTrackConstraints);
+        } catch {
+          // Some mobile browsers expose capabilities but reject applying them.
+        }
       };
 
       const waitForVideoElement = async () => {
@@ -297,6 +350,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
         const video = await waitForVideoElement();
         video.srcObject = stream;
         await video.play();
+        await configureScannerTrack(stream);
 
         const startedAt = Date.now();
         while (Date.now() - startedAt < 4000) {
@@ -1353,6 +1407,12 @@ function BarcodeScannerModal({
         )}
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
+          {!error && (
+            <p className="mb-4 text-center text-xs text-white/70">
+              לתוצאות טובות יותר החזיקו את הטלפון מעט רחוק יותר מהברקוד ותנו למצלמה רגע להתפקס.
+            </p>
+          )}
+
           {error && (
             <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
               <p>{error}</p>

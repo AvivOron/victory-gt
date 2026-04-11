@@ -8,6 +8,18 @@ interface Props {
 }
 
 export default function LandingHero({ productCount, promoCount, city, address }: Props) {
+  const features = [
+    "עדכון אוטומטי כל 3 שעות",
+    "חיפוש לפי שם מוצר, יצרן או ברקוד",
+    "סריקת ברקוד עם המצלמה בנייד",
+    "סינון לפי קטגוריה",
+    "מבצעים עם פירוט מלא",
+    "מועדפים ורשימת קניות עם Google",
+    "עגלה משותפת לבני הבית עם קוד שיתוף",
+    "מוצרים שאזלו מהמלאי מוצגים במעומעם עם אזהרת חוסר מלאי",
+    "חינמי, ללא פרסומות",
+  ];
+
   return (
     <section className="border-b border-gray-200 bg-white">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
@@ -18,7 +30,7 @@ export default function LandingHero({ productCount, promoCount, city, address }:
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-600 sm:text-base">
           מחירון שקוף ועדכני לסניף ויקטורי {city}, {address}. הנתונים נשלפים אוטומטית ממאגר שקיפות המחירים של{" "}
-          <strong>רשות ההגנה על הצרכן ולסחר הוגן</strong> — כך תמיד תדעו כמה עולה כל מוצר, אילו מבצעים פעילים, ואילו פריטים מסומנים כרגע כחסרים במלאי.
+          <strong>רשות ההגנה על הצרכן ולסחר הוגן</strong> — כך תמיד תדעו כמה עולה כל מוצר, אילו מבצעים פעילים, אילו פריטים חסרים במלאי, וגם תוכלו לסרוק ברקוד מהנייד או לשתף עגלת קניות עם בני הבית.
         </p>
 
         {/* Stats */}
@@ -37,15 +49,7 @@ export default function LandingHero({ productCount, promoCount, city, address }:
 
         {/* Feature list */}
         <ul className="mt-8 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            "עדכון אוטומטי כל 3 שעות",
-            "חיפוש לפי שם מוצר או ברקוד",
-            "סינון לפי קטגוריה",
-            "מבצעים עם פירוט מלא",
-            "שמירת מועדפים ורשימת קניות עם Google",
-            "מוצרים שאזלו מהמלאי מוצגים במעומעם עם אזהרת חוסר מלאי",
-            "חינמי, ללא פרסומות",
-          ].map((f) => (
+          {features.map((f) => (
             <li key={f} className="flex items-center gap-2 text-sm text-gray-600">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e31837]/10 text-xs font-black text-[#e31837]">✓</span>
               {f}
@@ -65,7 +69,7 @@ export default function LandingHero({ productCount, promoCount, city, address }:
           />
           <FaqCard
             q="איך מוצאים מוצר ספציפי?"
-            a="השתמשו בשורת החיפוש — ניתן לחפש לפי שם מוצר, שם יצרן או ברקוד (מק״ט). אפשר גם לסנן לפי קטגוריה."
+            a="אפשר לחפש לפי שם מוצר, שם יצרן או ברקוד (מק״ט). בנייד אפשר גם לפתוח את סריקת הברקוד, לכוון את המצלמה אל המוצר ולקבל מיד את כרטיס המוצר עם המחיר והמבצעים."
           />
           <FaqCard
             q="מה המשמעות של ״מבצע״?"
@@ -74,6 +78,10 @@ export default function LandingHero({ productCount, promoCount, city, address }:
           <FaqCard
             q="אפשר לשמור מוצרים לקנייה?"
             a="כן. אחרי התחברות עם Google אפשר לשמור מועדפים, להוסיף מוצרים לרשימת קניות, ולראות מתוך הרשימה אילו פריטים משתתפים כרגע במבצע."
+          />
+          <FaqCard
+            q="אפשר לשתף את הרשימה עם בני הבית?"
+            a="כן. לכל משתמש מחובר נוצרת עגלה משותפת עם קוד שיתוף. אפשר להעתיק את הקוד, לשלוח אותו לבני הבית, וכולם רואים ומעדכנים את אותה רשימת קניות."
           />
           <FaqCard
             q="מה קורה אם מוצר לא זמין?"
