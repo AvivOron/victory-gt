@@ -767,7 +767,11 @@ def sync_images(branch_id: str) -> None:
         def run(cmd: str) -> str:
             return subprocess.check_output(cmd.split(), cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
         try:
+            # Commit any already-staged/untracked images before pulling
             run("git add public/products")
+            staged = run("git diff --cached --name-only public/products")
+            if staged:
+                run('git commit -m "add product images [ci skip]"')
             run("git pull --rebase")
             log.info("git pull done")
         except subprocess.CalledProcessError as e:
