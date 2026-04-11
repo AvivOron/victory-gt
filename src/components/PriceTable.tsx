@@ -1598,8 +1598,22 @@ function ShoppingListRow({
   onDecrement: (item: ShoppingListItem) => void;
   onRemove: (item: ShoppingListItem) => void;
 }) {
+  const [lightbox, setLightbox] = useState(false);
   return (
-    <div className={`grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 rounded-lg border bg-white p-4 shadow-sm transition-colors ${item.checked ? "border-gray-100 opacity-60" : "border-gray-200"}`}>
+    <>
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 cursor-zoom-out"
+          onClick={() => setLightbox(false)}
+        >
+          <img
+            src={`/victory-gt/products/${item.item_code}.jpg`}
+            alt={item.item_name}
+            className="max-h-[80vh] max-w-[80vw] rounded-xl object-contain"
+          />
+        </div>
+      )}
+    <div className={`grid grid-cols-[auto_auto_1fr_auto_auto] items-center gap-3 rounded-lg border bg-white p-4 shadow-sm transition-colors ${item.checked ? "border-gray-100 opacity-60" : "border-gray-200"}`}>
       {/* checkbox */}
       <button
         type="button"
@@ -1609,6 +1623,14 @@ function ShoppingListRow({
       >
         {item.checked && <span className="text-white text-xs font-bold leading-none">✓</span>}
       </button>
+      {/* product image */}
+      <img
+        src={`/victory-gt/products/${item.item_code}.jpg`}
+        alt={item.item_name}
+        className="h-10 w-10 flex-shrink-0 rounded-md border border-gray-100 object-contain bg-white cursor-zoom-in"
+        onClick={() => setLightbox(true)}
+        onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+      />
       {/* name + barcode */}
       <div className="min-w-0 text-right">
         <p className={`font-semibold text-sm leading-snug ${item.checked ? "line-through text-gray-400" : "text-[#171717]"}`}>
@@ -1643,6 +1665,7 @@ function ShoppingListRow({
         ×
       </button>
     </div>
+    </>
   );
 }
 
@@ -1658,6 +1681,7 @@ function DiscountModal({
   positiveNumber: (value: string) => number | null;
 }) {
   const promos = product.discount_promos ?? [];
+  const [expandedImage, setExpandedImage] = useState<string | null>(null);
 
   return (
     <div
@@ -1671,11 +1695,20 @@ function DiscountModal({
         onClick={event => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-black text-[#171717]">{product.item_name}</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              מחיר רגיל: <strong className="text-green-700">{formatCurrency(product.item_price)}</strong>
-            </p>
+          <div className="flex items-start gap-3">
+            <img
+              src={`/victory-gt/products/${product.item_code}.jpg`}
+              alt={product.item_name}
+              className={`flex-shrink-0 rounded-md border border-gray-100 object-contain bg-white cursor-pointer transition-all duration-200 ${expandedImage === product.item_code ? "h-40 w-40" : "h-16 w-16"}`}
+              onClick={e => { e.stopPropagation(); setExpandedImage(expandedImage === product.item_code ? null : product.item_code); }}
+              onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            />
+            <div>
+              <h2 className="text-lg font-black text-[#171717]">{product.item_name}</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                מחיר רגיל: <strong className="text-green-700">{formatCurrency(product.item_price)}</strong>
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -1716,12 +1749,23 @@ function DiscountModal({
                     <div className="mt-2 space-y-2">
                       {sharedItems.map(item => (
                         <div key={item.item_code} className="rounded-lg border border-gray-200 bg-white p-2 text-sm text-gray-600">
-                          <p className="font-semibold leading-snug text-[#171717]">{item.item_name || item.item_code}</p>
-                          <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                            <span>מחיר רגיל: <strong className="text-[#171717]">{formatCurrency(item.item_price)}</strong></span>
-                            <span className="text-xs text-gray-400">
-                            ברקוד: <span dir="ltr" className="font-mono">{item.item_code}</span>
-                            </span>
+                          <div className="flex gap-2">
+                            <img
+                              src={`/victory-gt/products/${item.item_code}.jpg`}
+                              alt={item.item_name}
+                              className={`flex-shrink-0 rounded-md border border-gray-100 object-contain bg-white cursor-pointer transition-all duration-200 ${expandedImage === item.item_code ? "h-32 w-32" : "h-12 w-12"}`}
+                              onClick={() => setExpandedImage(expandedImage === item.item_code ? null : item.item_code)}
+                              onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                            />
+                            <div>
+                              <p className="font-semibold leading-snug text-[#171717]">{item.item_name || item.item_code}</p>
+                              <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                                <span>מחיר רגיל: <strong className="text-[#171717]">{formatCurrency(item.item_price)}</strong></span>
+                                <span className="text-xs text-gray-400">
+                                ברקוד: <span dir="ltr" className="font-mono">{item.item_code}</span>
+                                </span>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       ))}
