@@ -12,6 +12,7 @@ Price and promotions viewer for the Victory branch in Ganei Tikva. The app reads
 - Share a household shopping list with an invite code
 - Show promo labels inside the shopping list
 - Fade unavailable products and block adding them to the cart with an out-of-stock warning
+- Product images displayed in table rows, cart, favourites, promos, and modals (served as static files, cached 7 days)
 
 ## Stack
 
