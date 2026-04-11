@@ -691,20 +691,26 @@ def fetch_and_upload_images(item_codes: list[str]) -> None:
 
     log.info("Uploading images for %d products...", len(item_codes))
 
+    not_found = 0
+    errors = 0
+
     def fetch_one(item_code: str) -> bool:
+        nonlocal not_found, errors
         url = PRICEZ_IMAGE_URL.format(item_code=item_code)
         try:
             r = SESSION.get(url, timeout=15)
             if r.status_code == 404:
+                not_found += 1
                 return False
             r.raise_for_status()
             return upload_image_to_blob(item_code, r.content)
         except Exception as e:
-            log.debug("Image fetch/upload failed for %s: %s", item_code, e)
+            errors += 1
+            log.warning("Image fetch/upload failed for %s: %s", item_code, e)
             return False
 
     success = sum(1 for ok in ThreadPoolExecutor(max_workers=IMAGE_BATCH).map(fetch_one, item_codes) if ok)
-    log.info("Images uploaded: %d / %d", success, len(item_codes))
+    log.info("Images uploaded: %d / %d (404: %d, errors: %d)", success, len(item_codes), not_found, errors)
 
 
 # ── Main scan ─────────────────────────────────────────────────────────────────
