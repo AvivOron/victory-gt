@@ -760,33 +760,25 @@ def sync_images(branch_id: str) -> None:
 
     log.info("Image fetch done. ok=%d, 404=%d, err=%d", ok, len(new_404s), err)
 
-    # Pull latest before writing new files so commit is on top of remote
     def _git_pull() -> None:
-        def run(cmd: list[str]) -> str:
-            return subprocess.check_output(cmd, cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
         try:
-            # Commit any already-staged/untracked images before pulling
-            run(["git", "add", "public/products"])
-            staged = run(["git", "diff", "--cached", "--name-only", "public/products"])
-            if staged:
-                run(["git", "commit", "-m", "add product images [ci skip]"])
-            run(["git", "pull", "--rebase"])
-            log.info("git pull done")
+            out = subprocess.check_output(["git", "pull", "--rebase"], cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
+            log.info("git pull: %s", out)
         except subprocess.CalledProcessError as e:
             log.warning("git pull failed: %s", e.output.decode())
 
     _git_pull()
 
     copied = sum(1 for c in missing if compress_image(c))
-
-    # Also commit any untracked images already in public/products/ that aren't in git yet
-    def run(cmd: str) -> str:
-        return subprocess.check_output(cmd.split(), cwd=REPO_DIR, stderr=subprocess.STDOUT).decode().strip()
-    untracked = run("git ls-files --others --exclude-standard public/products").strip().splitlines()
-    if untracked:
-        log.info("%d untracked images found in public/products, adding to commit", len(untracked))
-
     log.info("Images compressed and ready: %d", copied)
+
+    # Check for any untracked images sitting in public/products/ (e.g. from a previous interrupted run)
+    untracked = subprocess.check_output(
+        ["git", "ls-files", "--others", "--exclude-standard", "public/products"],
+        cwd=REPO_DIR, stderr=subprocess.STDOUT
+    ).decode().strip().splitlines()
+    if untracked:
+        log.info("%d untracked images found in public/products/", len(untracked))
 
     if copied or untracked:
         git_sync_images()
