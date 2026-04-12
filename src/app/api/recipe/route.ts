@@ -21,7 +21,7 @@ async function callGemini(prompt: string): Promise<string> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
+        generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
       }),
     }
   );
@@ -133,42 +133,48 @@ ${recipeContent}`;
     };
 
     if (isFreeText) {
-      // ingredients comes first in the JSON — find its array reliably
-      const ingKey = cleaned.indexOf('"ingredients"');
-      if (ingKey !== -1) {
-        const arrStart = cleaned.indexOf("[", ingKey);
-        const arrEnd = cleaned.indexOf("]", arrStart);
-        if (arrStart !== -1 && arrEnd !== -1) {
-          try {
-            ingredientHints = parseHints(JSON.parse(cleaned.slice(arrStart, arrEnd + 1)));
-          } catch { /* ignore */ }
-        }
-      }
-      // recipe comes after — extract the string value after "recipe":
-      const recipeKey = cleaned.indexOf('"recipe"');
-      if (recipeKey !== -1) {
-        const colon = cleaned.indexOf(":", recipeKey);
-        const strStart = cleaned.indexOf('"', colon + 1);
-        if (strStart !== -1) {
-          // Find the closing quote, respecting escaped quotes
-          let pos = strStart + 1;
-          let recipeStr = "";
-          while (pos < cleaned.length) {
-            const ch = cleaned[pos];
-            if (ch === "\\" && pos + 1 < cleaned.length) {
-              const next = cleaned[pos + 1];
-              if (next === "n") recipeStr += "\n";
-              else if (next === "t") recipeStr += "\t";
-              else recipeStr += next;
-              pos += 2;
-            } else if (ch === '"') {
-              break;
-            } else {
-              recipeStr += ch;
-              pos++;
-            }
+      // Try clean JSON.parse first
+      let parsed: { ingredients?: unknown; recipe?: unknown } | null = null;
+      try { parsed = JSON.parse(cleaned) as { ingredients?: unknown; recipe?: unknown }; } catch { /* fall through */ }
+
+      if (parsed) {
+        ingredientHints = parseHints(parsed.ingredients);
+        if (typeof parsed.recipe === "string" && parsed.recipe.length > 20) generatedRecipe = parsed.recipe;
+      } else {
+        // Fallback: extract ingredients array by position
+        const ingKey = cleaned.indexOf('"ingredients"');
+        if (ingKey !== -1) {
+          const arrStart = cleaned.indexOf("[", ingKey);
+          const arrEnd = cleaned.indexOf("]", arrStart);
+          if (arrStart !== -1 && arrEnd !== -1) {
+            try { ingredientHints = parseHints(JSON.parse(cleaned.slice(arrStart, arrEnd + 1))); } catch { /* ignore */ }
           }
-          if (recipeStr.length > 20) generatedRecipe = recipeStr;
+        }
+        // Fallback: extract recipe string char-by-char
+        const recipeKey = cleaned.indexOf('"recipe"');
+        if (recipeKey !== -1) {
+          const colon = cleaned.indexOf(":", recipeKey);
+          const strStart = cleaned.indexOf('"', colon + 1);
+          if (strStart !== -1) {
+            let pos = strStart + 1;
+            let recipeStr = "";
+            while (pos < cleaned.length) {
+              const ch = cleaned[pos];
+              if (ch === "\\" && pos + 1 < cleaned.length) {
+                const next = cleaned[pos + 1];
+                if (next === "n") recipeStr += "\n";
+                else if (next === "t") recipeStr += "\t";
+                else recipeStr += next;
+                pos += 2;
+              } else if (ch === '"') {
+                break;
+              } else {
+                recipeStr += ch;
+                pos++;
+              }
+            }
+            if (recipeStr.length > 20) generatedRecipe = recipeStr;
+          }
         }
       }
     } else {
