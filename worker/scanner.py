@@ -56,7 +56,6 @@ SESSION.headers.update(HEADERS)
 SESSION.mount("https://", requests.adapters.HTTPAdapter(pool_connections=8, pool_maxsize=8))
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
-FILE_CACHE = os.path.join(_DIR, "filelist_cache.json")
 CATEGORY_CACHE = os.path.join(_DIR, "category_cache.json")
 LAST_FILES_CACHE = os.path.join(_DIR, "last_files_cache.json")
 IMAGE_404_CACHE = os.path.join(_DIR, "image_404_cache.json")
@@ -331,30 +330,12 @@ def _scrape_file_list() -> list[str]:
 
 
 def fetch_file_list() -> list[str]:
-    """Return file list, using a same-day cache to avoid hammering the site."""
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    # Load cache if it's from today
-    if os.path.exists(FILE_CACHE):
-        try:
-            with open(FILE_CACHE) as fh:
-                cached = json.load(fh)
-            if cached.get("date") == today and cached.get("files"):
-                log.info("Using cached file list (%d files from today)", len(cached["files"]))
-                return cached["files"]
-        except Exception:
-            pass
-
+    """Fetch the current file list from the site."""
     log.info("Fetching file index from site...")
     names = _scrape_file_list()
     log.info("Found %d files", len(names))
-
-    if names:
-        with open(FILE_CACHE, "w") as fh:
-            json.dump({"date": today, "files": names}, fh)
-    else:
+    if not names:
         log.warning("No files returned — site may be rate-limiting. Will use direct URL construction.")
-
     return names
 
 
@@ -810,26 +791,35 @@ def run_scan() -> None:
 
     branch_files = sorted(f for f in files if f"-{branch_id}-" in f)
 
-    # Skip upsert if source files haven't changed since last successful scan
-    skip_upsert = False
+    # Load set of already-processed filenames
+    processed_files: set[str] = set()
     try:
         with open(LAST_FILES_CACHE) as fh:
-            last_files = json.load(fh)
-        if last_files == branch_files:
-            log.info("Source files unchanged — skipping upsert.")
-            skip_upsert = True
+            processed_files = set(json.load(fh))
     except Exception:
         pass
 
-    if not skip_upsert:
-        products, promos = fetch_branch_data(branch_id, files)
+    new_files = [f for f in branch_files if f not in processed_files]
+    if not new_files:
+        log.info("Source files unchanged — skipping upsert.")
+    else:
+        log.info("Processing %d new file(s): %s", len(new_files), new_files)
+        products, promos = fetch_branch_data(branch_id, new_files)
         products = categorize_products(products)
         upsert_products(products)
         upsert_promos(promos)
-        mark_unavailable_products(branch_id, {p["item_code"] for p in products})
-        delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
+        has_full_price = any(f.startswith("PriceFull") for f in new_files)
+        if has_full_price:
+            mark_unavailable_products(branch_id, {p["item_code"] for p in products})
+        else:
+            log.info("No PriceFull in new files — skipping mark_unavailable_products")
+        has_full_promo = any(f.startswith("PromoFull") for f in new_files)
+        if has_full_promo:
+            delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
+        else:
+            log.info("No PromoFull in new files — skipping delete_stale_promos")
         with open(LAST_FILES_CACHE, "w") as fh:
-            json.dump(branch_files, fh)
+            json.dump(sorted(processed_files | set(new_files)), fh)
 
     sync_images(branch_id)
 
