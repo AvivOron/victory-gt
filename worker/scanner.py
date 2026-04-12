@@ -699,7 +699,7 @@ def notify_favourite_discounts(promos: list[dict]) -> None:
             continue
 
         # Build email HTML
-        unsubscribe_url = f"{APP_BASE_URL}/unsubscribe?uid={user_id}"
+        unsubscribe_url = f"{APP_BASE_URL}/api/unsubscribe?uid={user_id}"
         rows_html = ""
         for pid, v in new_promos.items():
             p = v["promo"]
