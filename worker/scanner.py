@@ -30,7 +30,6 @@ from xml.etree import ElementTree as ET
 import subprocess
 
 import requests
-import schedule
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
@@ -996,19 +995,22 @@ def run_scan() -> None:
     log.info("=== Scan complete in %.1fs ===", time.time() - start)
 
 
+def test_notify() -> None:
+    """One-off: fetch all promos from DB and run notify_favourite_discounts."""
+    branch_id = GANEI_TIKVA_BRANCH_ID
+    rows = db_query("SELECT * FROM promos WHERE branch_id = %s", [branch_id])
+    promos = [dict(r) for r in rows]
+    log.info("Loaded %d promos from DB for branch %s", len(promos), branch_id)
+    notify_favourite_discounts(promos)
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Victory GT price scanner")
-    parser.add_argument("--watch", action="store_true", help="Run on schedule instead of once")
+    parser.add_argument("--test-notify", action="store_true", help="Test discount email notifications")
     args = parser.parse_args()
 
-    if args.watch:
-        log.info("Watch mode: scanning now, then daily at 08:00 and 14:00")
-        run_scan()
-        schedule.every().day.at("08:00").do(run_scan)
-        schedule.every().day.at("14:00").do(run_scan)
-        while True:
-            schedule.run_pending()
-            time.sleep(60)
+    if args.test_notify:
+        test_notify()
     else:
         run_scan()
