@@ -153,8 +153,22 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     return () => clearTimeout(t);
   }, [search]);
 
+  // Reset filters and page on tab change
+  const prevTab = useRef(tab);
+  useEffect(() => {
+    if (prevTab.current !== tab) {
+      prevTab.current = tab;
+      setSearch("");
+      setDebouncedSearch("");
+      setCategory("");
+      setSortCol("item_name");
+      setSortDir("asc");
+      setPage(1);
+    }
+  }, [tab]);
+
   // Reset page on search/sort change
-  useEffect(() => { setPage(1); }, [debouncedSearch, category, sortCol, sortDir, tab]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, category, sortCol, sortDir]);
 
   useEffect(() => {
     async function fetchCategories() {
