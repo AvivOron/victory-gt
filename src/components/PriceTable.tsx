@@ -564,9 +564,6 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     setCategory("");
   }
 
-  useEffect(() => {
-    clearFilters();
-  }, [tab]);
 
   const hasActiveFilters = search || debouncedSearch || category;
 
