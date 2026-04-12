@@ -1011,8 +1011,8 @@ def test_notify() -> None:
     active = [p for p in promos if p.get("start_date", "") <= today <= p.get("end_date", "")]
     log.info("Active promos (date filter): %d", len(active))
 
-    fav_rows = db_query("SELECT user_id, user_email, item_code FROM favourites WHERE branch_id = %s", [branch_id])
-    log.info("Favourites for branch: %d", len(fav_rows))
+    fav_rows = db_query("SELECT user_id, user_email, item_code, branch_id FROM favourites LIMIT 5")
+    log.info("Favourites sample: %s", fav_rows)
 
     opted_out = {r["user_id"] for r in db_query("SELECT user_id FROM email_opt_out")}
     log.info("Opted-out users: %d", len(opted_out))
