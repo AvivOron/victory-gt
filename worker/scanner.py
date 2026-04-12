@@ -40,6 +40,9 @@ load_dotenv()
 
 DATABASE_URL: str = os.environ["DATABASE_URL"]
 GANEI_TIKVA_BRANCH_ID: str = os.environ.get("GANEI_TIKVA_BRANCH_ID", "")
+RESEND_API_KEY: str = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM = "discount@avivo.dev"
+APP_BASE_URL = "https://avivo.dev/victory-gt"
 
 CHAIN_ID = "7290696200003"
 BASE_URL = "https://laibcatalog.co.il/CompetitionRegulationsFiles/latest/"
@@ -189,6 +192,17 @@ def ensure_schema() -> None:
         {"sql": "CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)", "args": []},
         {"sql": "CREATE INDEX IF NOT EXISTS idx_products_branch ON products(branch_id)", "args": []},
         {"sql": "CREATE INDEX IF NOT EXISTS idx_promos_branch ON promos(branch_id)", "args": []},
+        {"sql": "CREATE INDEX IF NOT EXISTS idx_favourites_item_code ON favourites(item_code)", "args": []},
+        {"sql": """CREATE TABLE IF NOT EXISTS email_opt_out (
+            user_id      TEXT PRIMARY KEY,
+            opted_out_at TEXT NOT NULL
+        )""", "args": []},
+        {"sql": """CREATE TABLE IF NOT EXISTS promo_email_log (
+            user_id      TEXT NOT NULL,
+            promotion_id TEXT NOT NULL,
+            sent_at      TEXT NOT NULL,
+            PRIMARY KEY (user_id, promotion_id)
+        )""", "args": []},
     ])
     # Migrate: add columns if they don't exist yet (existing DBs)
     db_execute_ignore_errors([
@@ -593,6 +607,158 @@ def upsert_promos(rows: list[dict]) -> None:
     log.info("Promos done")
 
 
+def notify_favourite_discounts(promos: list[dict]) -> None:
+    """
+    For each user who has a favourite item on discount in a new PromoFull,
+    send a single digest email with all their relevant promos.
+    Skips promos already emailed within their promotion date window.
+    """
+    if not RESEND_API_KEY or not promos:
+        return
+
+    today = datetime.now().strftime("%Y/%m/%d")
+
+    # Build map of item_code -> list of promo dicts (only active promos)
+    item_to_promos: dict[str, list[dict]] = {}
+    for promo in promos:
+        try:
+            codes = json.loads(promo["item_codes"])
+        except Exception:
+            continue
+        # Only include promos that are currently active
+        start = promo.get("start_date", "")
+        end = promo.get("end_date", "")
+        if start and end and not (start <= today <= end):
+            continue
+        for code in codes:
+            item_to_promos.setdefault(code, []).append(promo)
+
+    if not item_to_promos:
+        return
+
+    discounted_codes = list(item_to_promos.keys())
+
+    # Fetch opted-out users, favourites (filtered to discounted items only), and product names in 3 queries
+    opted_out = {r["user_id"] for r in db_query("SELECT user_id FROM email_opt_out")}
+
+    fav_rows = db_query(
+        "SELECT user_id, user_email, item_code FROM favourites WHERE item_code = ANY(%s)",
+        [discounted_codes],
+    )
+    if not fav_rows:
+        return
+
+    name_map = {
+        r["item_code"]: r["item_name"]
+        for r in db_query(
+            "SELECT item_code, item_name FROM products WHERE item_code = ANY(%s)",
+            [discounted_codes],
+        )
+    }
+
+    # Group by user
+    from collections import defaultdict
+    user_hits: dict[str, dict] = defaultdict(lambda: {"email": "", "promos": {}})
+    for fav in fav_rows:
+        uid = fav["user_id"]
+        if uid in opted_out:
+            continue
+        code = fav["item_code"]
+        user_hits[uid]["email"] = fav["user_email"]
+        for promo in item_to_promos[code]:
+            pid = promo["promotion_id"]
+            if pid not in user_hits[uid]["promos"]:
+                user_hits[uid]["promos"][pid] = {"promo": promo, "items": []}
+            user_hits[uid]["promos"][pid]["items"].append(code)
+
+    if not user_hits:
+        return
+
+    # Fetch all already-sent promo logs for relevant users in one query
+    all_user_ids = list(user_hits.keys())
+    sent_rows = db_query(
+        "SELECT user_id, promotion_id FROM promo_email_log WHERE user_id = ANY(%s)",
+        [all_user_ids],
+    )
+    already_sent_by_user: dict[str, set[str]] = defaultdict(set)
+    for r in sent_rows:
+        already_sent_by_user[r["user_id"]].add(r["promotion_id"])
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    for user_id, data in user_hits.items():
+        email = data["email"]
+        if not email:
+            continue
+
+        new_promos = {
+            pid: v for pid, v in data["promos"].items()
+            if pid not in already_sent_by_user[user_id]
+        }
+        if not new_promos:
+            log.info("No new promos to email for user %s", user_id)
+            continue
+
+        # Build email HTML
+        unsubscribe_url = f"{APP_BASE_URL}/unsubscribe?uid={user_id}"
+        rows_html = ""
+        for pid, v in new_promos.items():
+            p = v["promo"]
+            item_names = ", ".join(name_map.get(c, c) for c in v["items"])
+            price_str = f"₪{p['discounted_price']}" if p.get("discounted_price") else ""
+            qty_str = f"מינ' {p['min_qty']}" if p.get("min_qty") and p["min_qty"] != "0" else ""
+            details = " | ".join(filter(None, [price_str, qty_str]))
+            rows_html += f"""
+            <tr>
+              <td style="padding:8px 0;border-bottom:1px solid #eee">
+                <strong>{p.get('description', '')}</strong><br>
+                <span style="color:#555;font-size:13px">{item_names}</span><br>
+                <span style="color:#e53e3e;font-weight:bold">{details}</span><br>
+                <span style="color:#888;font-size:12px">{p.get('start_date','')} – {p.get('end_date','')}</span>
+              </td>
+            </tr>"""
+
+        html = f"""
+        <div style="font-family:sans-serif;max-width:600px;margin:0 auto;direction:rtl">
+          <h2 style="color:#16a34a">מבצעים חדשים על מוצרים מהמועדפים שלך! 🛒</h2>
+          <p>מצאנו מבצעים על מוצרים שסימנת כמועדפים בויקטורי גני תקווה:</p>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            {rows_html}
+          </table>
+          <p style="margin-top:24px">
+            <a href="{APP_BASE_URL}" style="background:#16a34a;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none">
+              לצפייה בכל המבצעים
+            </a>
+          </p>
+          <p style="font-size:11px;color:#aaa;margin-top:32px">
+            <a href="{unsubscribe_url}" style="color:#aaa">הסר/י אותי מרשימת התפוצה</a>
+          </p>
+        </div>"""
+
+        try:
+            resp = requests.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "from": RESEND_FROM,
+                    "to": [email],
+                    "subject": f"🛒 {len(new_promos)} מבצע/ים חדשים על מועדפים שלך בויקטורי",
+                    "html": html,
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+            log.info("Sent discount digest email to %s (%d promos)", email, len(new_promos))
+            # Log sent promos
+            db_execute([
+                {"sql": "INSERT INTO promo_email_log (user_id, promotion_id, sent_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                 "args": [user_id, pid, now_iso]}
+                for pid in new_promos
+            ])
+        except Exception as e:
+            log.warning("Failed to send email to %s: %s", email, e)
+
+
 def mark_unavailable_products(branch_id: str, fresh_item_codes: set[str]) -> None:
     if not fresh_item_codes:
         log.warning("No fresh products — skipping unavailability marking to avoid wiping DB.")
@@ -817,6 +983,7 @@ def run_scan() -> None:
         has_full_promo = any(f.startswith("PromoFull") for f in new_files)
         if has_full_promo:
             delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
+            notify_favourite_discounts(promos)
         else:
             log.info("No PromoFull in new files — skipping delete_stale_promos")
         today = datetime.now().strftime("%Y%m%d")

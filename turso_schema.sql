@@ -53,6 +53,7 @@ CREATE INDEX IF NOT EXISTS idx_products_name   ON products(item_name);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_promos_branch   ON promos(branch_id);
 CREATE INDEX IF NOT EXISTS idx_favourites_user_branch ON favourites(user_id, branch_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_favourites_item_code   ON favourites(item_code);
 
 CREATE TABLE IF NOT EXISTS households (
   household_id        TEXT PRIMARY KEY,
@@ -88,3 +89,15 @@ CREATE TABLE IF NOT EXISTS shopping_list_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_shopping_list_items_household ON shopping_list_items(household_id, created_at);
+
+CREATE TABLE IF NOT EXISTS email_opt_out (
+  user_id      TEXT PRIMARY KEY,
+  opted_out_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS promo_email_log (
+  user_id      TEXT NOT NULL,
+  promotion_id TEXT NOT NULL,
+  sent_at      TEXT NOT NULL,
+  PRIMARY KEY (user_id, promotion_id)
+);
