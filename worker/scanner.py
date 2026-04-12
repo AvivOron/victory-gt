@@ -39,7 +39,7 @@ load_dotenv()
 
 DATABASE_URL: str = os.environ["DATABASE_URL"]
 GANEI_TIKVA_BRANCH_ID: str = os.environ.get("GANEI_TIKVA_BRANCH_ID", "")
-RESEND_API_KEY: str = os.environ.get("RESEND_API_KEY", "")
+RESEND_API_KEY: str = os.environ.get("RESEND_API_KEY")
 RESEND_FROM = "discount@avivo.dev"
 APP_BASE_URL = "https://avivo.dev/victory-gt"
 
