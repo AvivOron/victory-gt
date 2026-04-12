@@ -2153,9 +2153,10 @@ function RecipeModal({
   };
 
   useEffect(() => {
+    if (minimized) { document.body.style.overflow = ""; return; }
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = ""; };
-  }, []);
+  }, [minimized]);
 
   const step = results !== null ? "results" : "input";
   const label = step === "input" ? "🍳 מצא מוצרים לפי מתכון" : "🛒 מוצרים למתכון";
