@@ -133,7 +133,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   const [household, setHousehold] = useState<HouseholdInfo | null>(null);
   const [householdPending, setHouseholdPending] = useState(false);
   const [cartWarning, setCartWarning] = useState<string | null>(null);
-  const [recipeOpen, setRecipeOpen] = useState(false);
+  const [recipeState, setRecipeState] = useState<"closed" | "open" | "minimized">("closed");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
   const [scannerStatus, setScannerStatus] = useState("כוון את המצלמה אל הברקוד");
@@ -760,7 +760,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
 
   return (
     <>
-    <Header branch={branch} lastUpdated={lastUpdated} onCartClick={() => { setTab("shopping"); void fetchShoppingList(); }} cartCount={shoppingList.length} onRecipeClick={() => setRecipeOpen(true)} />
+    <Header branch={branch} lastUpdated={lastUpdated} onCartClick={() => { setTab("shopping"); void fetchShoppingList(); }} cartCount={shoppingList.length} onRecipeClick={() => setRecipeState("open")} />
     <div className="mx-auto max-w-7xl px-4 pb-10 sm:px-6 lg:px-8">
       {/* Controls */}
       <div className="sticky top-0 z-10 bg-[#f7f8fa]/95 py-3 backdrop-blur">
@@ -1185,14 +1185,17 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
           positiveNumber={positiveNumber}
         />
       )}
-      {recipeOpen && (
+      {recipeState !== "closed" && (
         <RecipeModal
           favouriteCodes={favouriteCodes}
           favouritePendingCode={favouritePendingCode}
           shoppingList={shoppingList}
           shoppingPendingCode={shoppingPendingCode}
           statusAuth={status}
-          onClose={() => setRecipeOpen(false)}
+          minimized={recipeState === "minimized"}
+          onClose={() => setRecipeState("closed")}
+          onMinimize={() => setRecipeState("minimized")}
+          onRestore={() => setRecipeState("open")}
           onAddToCart={addToCart}
           onDecrementFromCart={decrementCart}
           onToggleFavourite={toggleFavourite}
@@ -2062,7 +2065,10 @@ function RecipeModal({
   shoppingList,
   shoppingPendingCode,
   statusAuth,
+  minimized,
   onClose,
+  onMinimize,
+  onRestore,
   onAddToCart,
   onDecrementFromCart,
   onToggleFavourite,
@@ -2073,7 +2079,10 @@ function RecipeModal({
   shoppingList: ShoppingListItem[];
   shoppingPendingCode: string | null;
   statusAuth: string;
+  minimized: boolean;
   onClose: () => void;
+  onMinimize: () => void;
+  onRestore: () => void;
   onAddToCart: (product: { item_code: string; item_name: string; item_price: number; category?: string | null; is_available?: boolean }) => void | Promise<void>;
   onDecrementFromCart: (product: { item_code: string }) => void | Promise<void>;
   onToggleFavourite: (itemCode: string) => void | Promise<void>;
@@ -2144,10 +2153,25 @@ function RecipeModal({
   };
 
   const step = results !== null ? "results" : "input";
+  const label = step === "input" ? "🍳 מצא מוצרים לפי מתכון" : "🛒 מוצרים למתכון";
+
+  if (minimized) {
+    return (
+      <button
+        type="button"
+        onClick={onRestore}
+        className="fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-[#171717] shadow-lg hover:border-[#e31837] hover:text-[#e31837] transition-colors"
+        dir="rtl"
+      >
+        <span>{label}</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+      </button>
+    );
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-3 pt-12 overflow-y-auto" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white shadow-xl" dir="rtl">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-start justify-center bg-black/60 sm:p-3 sm:pt-12" onClick={e => { if (e.target === e.currentTarget) onMinimize(); }}>
+      <div className="w-full max-w-lg rounded-t-xl sm:rounded-xl border border-gray-200 bg-white shadow-xl flex flex-col max-h-[92dvh] sm:max-h-[85dvh]" dir="rtl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
           <div className="flex items-center gap-2">
@@ -2156,16 +2180,19 @@ function RecipeModal({
                 ‹
               </button>
             )}
-            <p className="font-bold text-sm text-[#171717]">
-              {step === "input" ? "🍳 מצא מוצרים לפי מתכון" : "🛒 מוצרים למתכון"}
-            </p>
+            <p className="font-bold text-sm text-[#171717]">{label}</p>
           </div>
-          <button type="button" onClick={onClose} className="h-7 w-7 rounded-full border border-gray-200 text-gray-400 hover:text-gray-600 text-base leading-none">×</button>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={onMinimize} className="h-7 w-7 flex items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-gray-600" title="מזעור">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <button type="button" onClick={onClose} className="h-7 w-7 rounded-full border border-gray-200 text-gray-400 hover:text-gray-600 text-base leading-none">×</button>
+          </div>
         </div>
 
         {/* Step 1: Inputs */}
         {step === "input" && (
-          <div className="px-4 py-3 space-y-2.5">
+          <div className="px-4 py-3 space-y-2.5 overflow-y-auto flex-1">
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">קישור למתכון</label>
               <input
@@ -2209,7 +2236,7 @@ function RecipeModal({
 
         {/* Step 2: Results */}
         {step === "results" && (
-          <div className="px-4 pb-4">
+          <div className="px-4 pb-4 overflow-y-auto flex-1">
             {/* Generated recipe toggle */}
             {recipe && (
               <div className="border-b border-gray-100 py-2">
