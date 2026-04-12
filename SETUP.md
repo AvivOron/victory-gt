@@ -79,6 +79,8 @@ Add these env vars in the Vercel dashboard (Settings → Environment Variables):
 - `VERCEL`
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
+- `GEMINI_API_KEY` — required for Recipe Finder (`POST /api/recipe`)
+- `RESEND_API_KEY` — required for recipe email delivery (`POST /api/recipe/email`)
 
 For Google OAuth, add an authorized redirect URI for each environment:
 

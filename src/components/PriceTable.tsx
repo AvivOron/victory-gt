@@ -2122,6 +2122,7 @@ function RecipeModal({
     setRecipeExpanded(false);
     setExpandedAlts(new Set());
     setExpandedImages(new Set());
+    setEmailStatus("idle");
     try {
       const res = await fetch("/victory-gt/api/recipe", {
         method: "POST",
@@ -2226,10 +2227,20 @@ function RecipeModal({
                       type="button"
                       onClick={() => { void sendRecipeEmail(); }}
                       disabled={emailSending || emailStatus === "sent"}
-                      className={`flex-shrink-0 h-7 px-2.5 rounded-lg border text-[10px] font-bold transition-colors disabled:opacity-60 ${emailStatus === "sent" ? "border-green-500 bg-green-50 text-green-700" : emailStatus === "error" ? "border-red-400 text-red-600" : "border-gray-300 text-gray-500 hover:border-[#e31837] hover:text-[#e31837]"}`}
+                      className={`flex-shrink-0 h-7 px-2.5 rounded-lg border text-[10px] font-bold transition-colors disabled:opacity-60 flex items-center gap-1 ${emailStatus === "sent" ? "border-green-500 bg-green-50 text-green-700" : emailStatus === "error" ? "border-red-400 text-red-600" : "border-gray-300 text-gray-500 hover:border-[#e31837] hover:text-[#e31837]"}`}
                       title="שלח מתכון למייל"
                     >
-                      {emailStatus === "sent" ? "נשלח ✓" : emailStatus === "error" ? "שגיאה" : emailSending ? "שולח..." : "📧 למייל"}
+                      {emailStatus === "sent" ? (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          נשלח
+                        </>
+                      ) : emailStatus === "error" ? "שגיאה" : emailSending ? "שולח..." : (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></svg>
+                          למייל
+                        </>
+                      )}
                     </button>
                   )}
                 </div>

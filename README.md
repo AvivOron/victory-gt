@@ -14,6 +14,7 @@ Price and promotions viewer for the Victory branch in Ganei Tikva. The app reads
 - Fade unavailable products and block adding them to the cart with an out-of-stock warning
 - Product images displayed in table rows, cart, favourites, promos, and modals (served as static files, cached 7 days)
 - Email digest when a favourited product goes on sale — one email per scan with all relevant promos, unsubscribe link included
+- Recipe Finder — paste a recipe URL or describe a dish in free text; Gemini AI extracts Hebrew ingredients, matches them against live inventory, and returns a shopping list with add-to-cart and favourites actions; generated recipes can be emailed to the signed-in user
 
 ## Stack
 
@@ -48,6 +49,8 @@ NEXTAUTH_URL=http://localhost:3000/victory-gt/api/auth
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 VERCEL=
+GEMINI_API_KEY=
+RESEND_API_KEY=
 ```
 
 4. Run the app:
@@ -74,6 +77,8 @@ Next.js app -> reads products/promos/favourites/household shopping list -> rende
 - `src/app/api/products/route.ts`: products API with promo enrichment
 - `src/app/api/promos/route.ts`: promos API with enriched promo items and availability
 - `src/app/api/shopping-list/route.ts`: signed-in shopping list API
+- `src/app/api/recipe/route.ts`: Recipe Finder — extracts ingredients via Gemini and matches against DB
+- `src/app/api/recipe/email/route.ts`: emails a generated recipe to the signed-in user via Resend
 - `src/lib/db.ts`: shared DB client and TypeScript interfaces
 - `worker/scanner.py`: ingestion worker
 

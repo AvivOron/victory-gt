@@ -35,6 +35,14 @@ A Next.js 16 grocery price comparison app (Israeli market). TypeScript + Tailwin
 - `email_opt_out(user_id)` — users added here are skipped; populated via `GET /api/unsubscribe?uid=`
 - One digest email per user per scan, not one per promo
 
+## Recipe Finder
+- Entry point: 🍳 button in Header → `RecipeModal` inside `PriceTable.tsx`
+- `POST /api/recipe` — accepts `{ url?, text? }`, fetches URL text if given, calls Gemini 2.5 Flash to extract Hebrew ingredient hints `{term, category}[]`, runs 4-pass SQL per ingredient (all-tokens+category → all-tokens → first-token+category → first-token), scores candidates locally, returns `{ results, ingredients, recipe }`
+- `POST /api/recipe/email` — auth-protected; sends a generated recipe as styled HTML to the signed-in user's email via Resend from `recipe@avivo.dev`; requires `RESEND_API_KEY`
+- Env vars required: `GEMINI_API_KEY` (recipe route), `RESEND_API_KEY` (email route)
+- Hebrew normalization: `יי→י`, `וו→ו` applied to both search tokens (SQL OR variants) and scoring
+- Scoring: name-start match +6, whole-word +3, substring +1, category match +2, tiebreak by price asc
+
 ## Conventions
 - All new API routes go under `src/app/api/`
 - Tailwind v4 (PostCSS plugin) — no `tailwind.config.js`; config is in CSS
