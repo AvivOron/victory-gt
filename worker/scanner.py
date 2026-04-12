@@ -316,16 +316,17 @@ def categorize_products(products: list[dict]) -> list[dict]:
 
 # ── File index ────────────────────────────────────────────────────────────────
 def _scrape_file_list() -> list[str]:
-    """Hit the index page and return filenames. Returns [] if blocked."""
-    r = SESSION.get(API_URL, params={"code": CHAIN_ID, "fileType": "all"}, timeout=30)
-    r.raise_for_status()
-    html = r.text
-    # Files appear as plain text references like Price7290696200003-028-202604100820-001.xml.gz
-    files = re.findall(
+    """Hit the index page and return filenames for today. Returns [] if blocked."""
+    pattern = re.compile(
         r'(?:Price|PriceFull|Promo|PromoFull|Stores|StoresFull)'
         r'\d{13}-\d{3}-\d{12}-\d{3}\.xml\.gz',
-        html, re.IGNORECASE
+        re.IGNORECASE
     )
+    today = datetime.now().strftime("%Y%m%d")
+
+    r = SESSION.get(API_URL, params={"code": CHAIN_ID, "fileType": "all"}, timeout=30)
+    r.raise_for_status()
+    files = [f for f in pattern.findall(r.text) if today in f]
     return list(dict.fromkeys(files))  # deduplicate
 
 
@@ -818,8 +819,10 @@ def run_scan() -> None:
             delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
         else:
             log.info("No PromoFull in new files — skipping delete_stale_promos")
+        today = datetime.now().strftime("%Y%m%d")
+        kept = {f for f in processed_files | set(new_files) if today in f}
         with open(LAST_FILES_CACHE, "w") as fh:
-            json.dump(sorted(processed_files | set(new_files)), fh)
+            json.dump(sorted(kept), fh)
 
     sync_images(branch_id)
 
