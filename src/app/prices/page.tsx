@@ -18,7 +18,7 @@ async function getStats() {
     const [pc, prc, lu] = await Promise.all([
       db.execute({ sql: `SELECT COUNT(*) as c FROM products ${where}`, args: branchArg }),
       db.execute({ sql: `SELECT COUNT(*) as c FROM promos ${where}`, args: branchArg }),
-      db.execute({ sql: `SELECT last_updated FROM products ${where} LIMIT 1`, args: branchArg }),
+      db.execute({ sql: `SELECT MAX(last_updated) as last_updated FROM products ${where}`, args: branchArg }),
     ]);
     return {
       productCount: Number(pc.rows[0]?.c ?? 0),
