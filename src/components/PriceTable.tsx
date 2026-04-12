@@ -147,6 +147,10 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   const scannerReaderRef = useRef<BrowserMultiFormatReader | null>(null);
   const [, startTransition] = useTransition();
 
+  // Keep a ref to debouncedSearch so fetch callbacks always read the latest value
+  const debouncedSearchRef = useRef(debouncedSearch);
+  useEffect(() => { debouncedSearchRef.current = debouncedSearch; }, [debouncedSearch]);
+
   // Debounce search
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -160,6 +164,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
       prevTab.current = tab;
       setSearch("");
       setDebouncedSearch("");
+      debouncedSearchRef.current = "";
       setCategory("");
       setSortCol("item_name");
       setSortDir("asc");
@@ -500,7 +505,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        q: debouncedSearch,
+        q: debouncedSearchRef.current,
         category,
         page: String(page),
         sort: sortCol,
@@ -528,7 +533,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   const fetchPromos = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ q: debouncedSearch, category, page: String(page) });
+      const params = new URLSearchParams({ q: debouncedSearchRef.current, category, page: String(page) });
       const res = await fetch(`/victory-gt/api/promos?${params}`);
       const data: PromosResponse = await res.json();
       setPromos(data.promos);
