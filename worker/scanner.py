@@ -1001,6 +1001,9 @@ def test_notify() -> None:
     rows = db_query("SELECT * FROM promos WHERE branch_id = %s", [branch_id])
     promos = [dict(r) for r in rows]
     log.info("Loaded %d promos from DB for branch %s", len(promos), branch_id)
+    if promos:
+        sample = promos[0]
+        log.info("Sample item_codes type=%s value=%r", type(sample["item_codes"]), sample["item_codes"][:80] if sample["item_codes"] else None)
     notify_favourite_discounts(promos)
 
 
