@@ -133,6 +133,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   const [household, setHousehold] = useState<HouseholdInfo | null>(null);
   const [householdPending, setHouseholdPending] = useState(false);
   const [cartWarning, setCartWarning] = useState<string | null>(null);
+  const [recipeOpen, setRecipeOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
   const [scannerStatus, setScannerStatus] = useState("כוון את המצלמה אל הברקוד");
@@ -759,7 +760,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
 
   return (
     <>
-    <Header branch={branch} lastUpdated={lastUpdated} onCartClick={() => { setTab("shopping"); void fetchShoppingList(); }} cartCount={shoppingList.length} />
+    <Header branch={branch} lastUpdated={lastUpdated} onCartClick={() => { setTab("shopping"); void fetchShoppingList(); }} cartCount={shoppingList.length} onRecipeClick={() => setRecipeOpen(true)} />
     <div className="mx-auto max-w-7xl px-4 pb-10 sm:px-6 lg:px-8">
       {/* Controls */}
       <div className="sticky top-0 z-10 bg-[#f7f8fa]/95 py-3 backdrop-blur">
@@ -1182,6 +1183,20 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
           onAddToCart={(item) => addToCart({ item_code: item.item_code, item_name: item.item_name, item_price: item.item_price, is_available: item.is_available })}
           onDecrementCart={(item) => decrementCart({ item_code: item.item_code })}
           positiveNumber={positiveNumber}
+        />
+      )}
+      {recipeOpen && (
+        <RecipeModal
+          favouriteCodes={favouriteCodes}
+          favouritePendingCode={favouritePendingCode}
+          shoppingList={shoppingList}
+          shoppingPendingCode={shoppingPendingCode}
+          statusAuth={status}
+          onClose={() => setRecipeOpen(false)}
+          onAddToCart={addToCart}
+          onDecrementFromCart={decrementCart}
+          onToggleFavourite={toggleFavourite}
+          onSignIn={promptGoogleSignIn}
         />
       )}
       {scannerOpen && (
@@ -2026,6 +2041,343 @@ function ProductImage({ itemCode, itemName, width, height, className }: { itemCo
       onError={() => setFailed(true)}
     />
   );
+}
+
+interface RecipeResult {
+  ingredient: string;
+  product: Product | null;
+  alternatives: Product[];
+}
+
+interface RecipeResponse {
+  results?: RecipeResult[];
+  ingredients?: string[];
+  recipe?: string | null;
+  error?: string;
+}
+
+function RecipeModal({
+  favouriteCodes,
+  favouritePendingCode,
+  shoppingList,
+  shoppingPendingCode,
+  statusAuth,
+  onClose,
+  onAddToCart,
+  onDecrementFromCart,
+  onToggleFavourite,
+  onSignIn,
+}: {
+  favouriteCodes: Set<string>;
+  favouritePendingCode: string | null;
+  shoppingList: ShoppingListItem[];
+  shoppingPendingCode: string | null;
+  statusAuth: string;
+  onClose: () => void;
+  onAddToCart: (product: { item_code: string; item_name: string; item_price: number; category?: string | null; is_available?: boolean }) => void | Promise<void>;
+  onDecrementFromCart: (product: { item_code: string }) => void | Promise<void>;
+  onToggleFavourite: (itemCode: string) => void | Promise<void>;
+  onSignIn: () => void;
+}) {
+  const [urlInput, setUrlInput] = useState("");
+  const [textInput, setTextInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<RecipeResult[] | null>(null);
+  const [recipe, setRecipe] = useState<string | null>(null);
+  const [recipeExpanded, setRecipeExpanded] = useState(false);
+  const [expandedAlts, setExpandedAlts] = useState<Set<number>>(new Set());
+  const toggleAlts = (i: number) => setExpandedAlts(prev => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s; });
+  const [expandedImages, setExpandedImages] = useState<Set<string>>(new Set());
+  const toggleImage = (code: string) => setExpandedImages(prev => { const s = new Set(prev); s.has(code) ? s.delete(code) : s.add(code); return s; });
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<"idle" | "sent" | "error">("idle");
+
+  const sendRecipeEmail = async () => {
+    if (!recipe) return;
+    setEmailSending(true);
+    setEmailStatus("idle");
+    try {
+      const titleMatch = recipe.match(/^#\s+(.+)$/m);
+      const title = titleMatch?.[1] ?? "מתכון";
+      const res = await fetch("/victory-gt/api/recipe/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipe, title }),
+      });
+      setEmailStatus(res.ok ? "sent" : "error");
+    } catch {
+      setEmailStatus("error");
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!urlInput.trim() && !textInput.trim()) return;
+    setLoading(true);
+    setError(null);
+    setResults(null);
+    setRecipe(null);
+    setRecipeExpanded(false);
+    setExpandedAlts(new Set());
+    setExpandedImages(new Set());
+    try {
+      const res = await fetch("/victory-gt/api/recipe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: urlInput.trim() || undefined, text: textInput.trim() || undefined }),
+      });
+      const data: RecipeResponse = await res.json();
+      if (!res.ok || data.error) {
+        setError(data.error ?? "שגיאה לא ידועה");
+      } else {
+        setResults(data.results ?? []);
+        setRecipe(data.recipe ?? null);
+      }
+    } catch {
+      setError("בעיה בחיבור לשרת");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const step = results !== null ? "results" : "input";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-3 pt-12 overflow-y-auto" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white shadow-xl" dir="rtl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+          <div className="flex items-center gap-2">
+            {step === "results" && (
+              <button type="button" onClick={() => { setResults(null); setRecipe(null); setError(null); }} className="h-7 w-7 flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-gray-600 text-sm">
+                ‹
+              </button>
+            )}
+            <p className="font-bold text-sm text-[#171717]">
+              {step === "input" ? "🍳 מצא מוצרים לפי מתכון" : "🛒 מוצרים למתכון"}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="h-7 w-7 rounded-full border border-gray-200 text-gray-400 hover:text-gray-600 text-base leading-none">×</button>
+        </div>
+
+        {/* Step 1: Inputs */}
+        {step === "input" && (
+          <div className="px-4 py-3 space-y-2.5">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">קישור למתכון</label>
+              <input
+                type="url"
+                placeholder="https://..."
+                value={urlInput}
+                onChange={e => setUrlInput(e.target.value)}
+                className="w-full h-9 rounded-lg border border-gray-300 bg-[#f7f8fa] px-3 text-sm focus:border-[#e31837] focus:outline-none focus:ring-2 focus:ring-[#e31837]/15"
+                dir="ltr"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">או תאר מתכון בחופשיות</label>
+              <textarea
+                placeholder="למשל: פסטה עם רוטב עגבניות, גבינת פרמזן ובשר טחון..."
+                value={textInput}
+                onChange={e => setTextInput(e.target.value)}
+                rows={3}
+                className="w-full rounded-lg border border-gray-300 bg-[#f7f8fa] px-3 py-2 text-sm focus:border-[#e31837] focus:outline-none focus:ring-2 focus:ring-[#e31837]/15 resize-none"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => { void handleSubmit(); }}
+              disabled={loading || (!urlInput.trim() && !textInput.trim())}
+              className="w-full h-9 rounded-lg bg-[#e31837] text-sm font-bold text-white transition-colors hover:bg-[#c0122c] disabled:opacity-50"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                  </svg>
+                  <span className="animate-pulse">Gemini חושב...</span>
+                </span>
+              ) : "חפש מוצרים"}
+            </button>
+            {error && <p className="text-center text-xs text-red-600">{error}</p>}
+          </div>
+        )}
+
+        {/* Step 2: Results */}
+        {step === "results" && (
+          <div className="px-4 pb-4">
+            {/* Generated recipe toggle */}
+            {recipe && (
+              <div className="border-b border-gray-100 py-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRecipeExpanded(v => !v)}
+                    className="flex flex-1 items-center justify-between text-xs font-semibold text-gray-500 hover:text-gray-700"
+                  >
+                    <span>📋 הצג מתכון</span>
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className={`transition-transform ${recipeExpanded ? "rotate-180" : ""}`}><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
+                  {statusAuth === "authenticated" && (
+                    <button
+                      type="button"
+                      onClick={() => { void sendRecipeEmail(); }}
+                      disabled={emailSending || emailStatus === "sent"}
+                      className={`flex-shrink-0 h-7 px-2.5 rounded-lg border text-[10px] font-bold transition-colors disabled:opacity-60 ${emailStatus === "sent" ? "border-green-500 bg-green-50 text-green-700" : emailStatus === "error" ? "border-red-400 text-red-600" : "border-gray-300 text-gray-500 hover:border-[#e31837] hover:text-[#e31837]"}`}
+                      title="שלח מתכון למייל"
+                    >
+                      {emailStatus === "sent" ? "נשלח ✓" : emailStatus === "error" ? "שגיאה" : emailSending ? "שולח..." : "📧 למייל"}
+                    </button>
+                  )}
+                </div>
+                {recipeExpanded && (
+                  <RecipeMarkdown markdown={recipe} />
+                )}
+              </div>
+            )}
+            {results!.length === 0 ? (
+              <p className="py-4 text-center text-sm text-gray-500">לא נמצאו מוצרים מתאימים</p>
+            ) : (
+              <>
+                <p className="py-2 text-xs text-gray-400">{results!.filter(r => r.product).length}/{results!.length} רכיבים נמצאו · לפי מחיר</p>
+                <div className="space-y-1.5">
+                  {results!.map((r, i) => {
+                    if (!r.product) {
+                      return (
+                        <div key={i} className="flex items-center gap-2 rounded-lg border border-dashed border-gray-200 px-2.5 py-2 opacity-50">
+                          <span className="flex-1 text-xs text-gray-400">לא נמצא: {r.ingredient}</span>
+                        </div>
+                      );
+                    }
+                    const p = r.product;
+                    const hasAlts = r.alternatives.length > 0;
+                    const altsOpen = expandedAlts.has(i);
+                    const ProductRow = ({ prod, dim }: { prod: Product; dim?: boolean }) => {
+                      const inCart = shoppingList.some(item => item.item_code === prod.item_code);
+                      const isFav = favouriteCodes.has(prod.item_code);
+                      const imgExpanded = expandedImages.has(prod.item_code);
+                      return (
+                        <div className={dim ? "opacity-70" : ""}>
+                          <div className="flex items-center gap-2 px-2.5 py-1.5">
+                            <button type="button" onClick={() => toggleImage(prod.item_code)} className="h-9 w-9 flex-shrink-0 rounded overflow-hidden bg-gray-50 border border-gray-100 hover:border-gray-300 transition-colors">
+                              <NextImage src={`${PRODUCT_IMAGES_BASE}/products/${prod.item_code}.jpg`} alt={prod.item_name} width={36} height={36} className="h-full w-full object-contain" unoptimized onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-[#171717] leading-tight truncate">{prod.item_name}</p>
+                              <p className="text-xs text-[#e31837] font-bold">₪{Number(prod.item_price).toFixed(2)}</p>
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {statusAuth === "authenticated" ? (
+                                <button type="button" onClick={() => { void onToggleFavourite(prod.item_code); }} disabled={favouritePendingCode === prod.item_code}
+                                  className={`h-8 w-8 rounded-lg border text-xs transition-colors disabled:opacity-60 ${isFav ? "border-yellow-400 bg-yellow-50 text-yellow-500" : "border-gray-300 text-gray-400 hover:border-yellow-400 hover:text-yellow-500"}`}
+                                  title={isFav ? "הסר ממועדפים" : "הוסף למועדפים"}>★</button>
+                              ) : (
+                                <button type="button" onClick={onSignIn} className="h-8 w-8 rounded-lg border border-gray-300 text-gray-400 hover:border-yellow-400 hover:text-yellow-500 text-xs" title="התחבר">★</button>
+                              )}
+                              {inCart ? (
+                                <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
+                                  <button type="button" onClick={() => { void onDecrementFromCart({ item_code: prod.item_code }); }} disabled={shoppingPendingCode === prod.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הפחת כמות">−</button>
+                                  <span className="flex min-w-[1.5rem] items-center justify-center text-sm font-bold tabular-nums">{shoppingList.find(item => item.item_code === prod.item_code)?.quantity ?? 1}</span>
+                                  <button type="button" onClick={() => { void onAddToCart({ item_code: prod.item_code, item_name: prod.item_name, item_price: prod.item_price, category: prod.category, is_available: prod.is_available }); }} disabled={shoppingPendingCode === prod.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
+                                </div>
+                              ) : (
+                                <button type="button" onClick={() => { void onAddToCart({ item_code: prod.item_code, item_name: prod.item_name, item_price: prod.item_price, category: prod.category, is_available: prod.is_available }); }} disabled={shoppingPendingCode === prod.item_code}
+                                  className="h-8 w-8 rounded-lg border border-gray-200 bg-white text-gray-400 hover:border-green-600 hover:text-green-600 transition-colors disabled:opacity-60 text-sm">
+                                  🛒
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {imgExpanded && (
+                            <div className="px-2.5 pb-2.5">
+                              <NextImage src={`${PRODUCT_IMAGES_BASE}/products/${prod.item_code}.jpg`} alt={prod.item_name} width={200} height={200} className="mx-auto object-contain rounded" unoptimized onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    };
+                    return (
+                      <div key={i} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                        <div className="flex items-center gap-1 px-2.5 pt-1.5 pb-0.5">
+                          <p className="flex-1 text-[10px] text-gray-400 truncate">{r.ingredient}</p>
+                          {hasAlts && (
+                            <button type="button" onClick={() => toggleAlts(i)} className="flex items-center gap-0.5 text-[10px] text-gray-400 hover:text-gray-600 flex-shrink-0">
+                              <span>{r.alternatives.length} אפשרויות</span>
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className={`transition-transform ${altsOpen ? "rotate-180" : ""}`}><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </button>
+                          )}
+                        </div>
+                        <ProductRow prod={p} />
+                        {altsOpen && (
+                          <div className="border-t border-gray-100 divide-y divide-gray-100">
+                            {r.alternatives.map((alt, j) => <ProductRow key={j} prod={alt} dim />)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+function RecipeMarkdown({ markdown }: { markdown: string }) {
+  const lines = markdown.split("\n");
+  const elements: React.ReactNode[] = [];
+  let listBuffer: string[] = [];
+  let listType: "ul" | "ol" | null = null;
+
+  const flushList = (key: string) => {
+    if (listBuffer.length === 0) return;
+    const Tag = listType === "ol" ? "ol" : "ul";
+    elements.push(
+      <Tag key={key} className={listType === "ol" ? "list-decimal pr-5 space-y-1" : "list-disc pr-5 space-y-1"}>
+        {listBuffer.map((item, i) => <li key={i} className="text-sm text-gray-700">{item}</li>)}
+      </Tag>
+    );
+    listBuffer = [];
+    listType = null;
+  };
+
+  lines.forEach((line, i) => {
+    const olMatch = line.match(/^\d+\.\s+(.*)/);
+    const ulMatch = line.match(/^[-*]\s+(.*)/);
+    const h1Match = line.match(/^#\s+(.*)/);
+    const h2Match = line.match(/^##\s+(.*)/);
+
+    if (h1Match) {
+      flushList(`fl-${i}`);
+      elements.push(<p key={i} className="mt-3 mb-1 text-sm font-bold text-[#171717]">{h1Match[1]}</p>);
+    } else if (h2Match) {
+      flushList(`fl-${i}`);
+      elements.push(<p key={i} className="mt-3 mb-1 text-xs font-bold uppercase tracking-wide text-gray-500">{h2Match[1]}</p>);
+    } else if (olMatch) {
+      if (listType === "ul") flushList(`fl-${i}`);
+      listType = "ol";
+      listBuffer.push(olMatch[1]);
+    } else if (ulMatch) {
+      if (listType === "ol") flushList(`fl-${i}`);
+      listType = "ul";
+      listBuffer.push(ulMatch[1]);
+    } else if (line.trim() === "") {
+      flushList(`fl-${i}`);
+    } else {
+      flushList(`fl-${i}`);
+      elements.push(<p key={i} className="text-sm text-gray-700 leading-relaxed">{line}</p>);
+    }
+  });
+  flushList("fl-end");
+
+  return <div className="mt-2 space-y-1">{elements}</div>;
 }
 
 function PgBtn({ children, onClick, active, disabled }: { children: React.ReactNode; onClick?: () => void; active?: boolean; disabled?: boolean }) {

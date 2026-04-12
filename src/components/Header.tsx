@@ -8,9 +8,10 @@ interface Props {
   lastUpdated: string | null;
   onCartClick: () => void;
   cartCount: number;
+  onRecipeClick: () => void;
 }
 
-export default function Header({ branch, lastUpdated, onCartClick, cartCount }: Props) {
+export default function Header({ branch, lastUpdated, onCartClick, cartCount, onRecipeClick }: Props) {
   const { status } = useSession();
   const city = branch?.city || "גני תקווה";
   const address = branch?.address || "רחוב הכרמל 20, גני תקווה";
@@ -48,6 +49,14 @@ export default function Header({ branch, lastUpdated, onCartClick, cartCount }: 
             רשות ההגנה לצרכן
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={onRecipeClick}
+              className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-base transition-colors hover:border-[#e31837] hover:text-[#e31837] sm:h-10 sm:w-10"
+              aria-label="מתכונים"
+              title="מצא מוצרים לפי מתכון"
+            >
+              🍳
+            </button>
             <button
               onClick={onCartClick}
               className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-base transition-colors hover:border-green-600 hover:text-green-600 sm:h-10 sm:w-10"
