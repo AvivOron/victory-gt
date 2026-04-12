@@ -641,7 +641,7 @@ def notify_favourite_discounts(promos: list[dict]) -> None:
     opted_out = {r["user_id"] for r in db_query("SELECT user_id FROM email_opt_out")}
 
     fav_rows = db_query(
-        "SELECT user_id, user_email, item_code FROM favourites WHERE item_code = ANY(%s)",
+        "SELECT user_id, user_email, item_code FROM favourites WHERE item_code = ANY(%s::text[])",
         [discounted_codes],
     )
     if not fav_rows:
@@ -650,7 +650,7 @@ def notify_favourite_discounts(promos: list[dict]) -> None:
     name_map = {
         r["item_code"]: r["item_name"]
         for r in db_query(
-            "SELECT item_code, item_name FROM products WHERE item_code = ANY(%s)",
+            "SELECT item_code, item_name FROM products WHERE item_code = ANY(%s::text[])",
             [discounted_codes],
         )
     }
@@ -676,7 +676,7 @@ def notify_favourite_discounts(promos: list[dict]) -> None:
     # Fetch all already-sent promo logs for relevant users in one query
     all_user_ids = list(user_hits.keys())
     sent_rows = db_query(
-        "SELECT user_id, promotion_id FROM promo_email_log WHERE user_id = ANY(%s)",
+        "SELECT user_id, promotion_id FROM promo_email_log WHERE user_id = ANY(%s::text[])",
         [all_user_ids],
     )
     already_sent_by_user: dict[str, set[str]] = defaultdict(set)
@@ -768,7 +768,7 @@ def mark_unavailable_products(branch_id: str, fresh_item_codes: set[str]) -> Non
         log.info("No products to mark unavailable.")
         return
     log.info("Marking %d products unavailable for branch %s", len(stale), branch_id)
-    db_execute([{"sql": "UPDATE products SET is_available = FALSE WHERE branch_id = %s AND item_code = ANY(%s)", "args": [branch_id, stale]}])
+    db_execute([{"sql": "UPDATE products SET is_available = FALSE WHERE branch_id = %s AND item_code = ANY(%s::text[])", "args": [branch_id, stale]}])
     log.info("Products marked unavailable.")
 
 
@@ -782,7 +782,7 @@ def delete_stale_promos(branch_id: str, fresh_promo_ids: set[str]) -> None:
         log.info("No stale promos to delete.")
         return
     log.info("Deleting %d stale promos for branch %s", len(stale), branch_id)
-    db_execute([{"sql": "DELETE FROM promos WHERE branch_id = %s AND promotion_id = ANY(%s)", "args": [branch_id, stale]}])
+    db_execute([{"sql": "DELETE FROM promos WHERE branch_id = %s AND promotion_id = ANY(%s::text[])", "args": [branch_id, stale]}])
     log.info("Stale promos deleted.")
 
 
@@ -1001,9 +1001,6 @@ def test_notify() -> None:
     rows = db_query("SELECT * FROM promos WHERE branch_id = %s", [branch_id])
     promos = [dict(r) for r in rows]
     log.info("Loaded %d promos from DB for branch %s", len(promos), branch_id)
-    if promos:
-        sample = promos[0]
-        log.info("Sample item_codes type=%s value=%r", type(sample["item_codes"]), sample["item_codes"][:80] if sample["item_codes"] else None)
     notify_favourite_discounts(promos)
 
 
