@@ -2379,17 +2379,38 @@ function RecipeMarkdown({ markdown }: { markdown: string }) {
   const elements: React.ReactNode[] = [];
   let listBuffer: string[] = [];
   let listType: "ul" | "ol" | null = null;
+  let paragraphBuffer: string[] = [];
+
+  const renderInlineMarkdown = (text: string) => {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+    return parts.map((part, index) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return <strong key={index} className="font-semibold text-[#171717]">{part.slice(2, -2)}</strong>;
+      }
+      return <span key={index}>{part}</span>;
+    });
+  };
 
   const flushList = (key: string) => {
     if (listBuffer.length === 0) return;
     const Tag = listType === "ol" ? "ol" : "ul";
     elements.push(
-      <Tag key={key} className={listType === "ol" ? "list-decimal pr-5 space-y-1" : "list-disc pr-5 space-y-1"}>
-        {listBuffer.map((item, i) => <li key={i} className="text-sm text-gray-700">{item}</li>)}
+      <Tag key={key} className={listType === "ol" ? "list-decimal pr-5 space-y-1.5" : "list-disc pr-5 space-y-1.5"}>
+        {listBuffer.map((item, i) => <li key={i} className="text-sm leading-relaxed text-gray-700">{renderInlineMarkdown(item)}</li>)}
       </Tag>
     );
     listBuffer = [];
     listType = null;
+  };
+
+  const flushParagraph = (key: string) => {
+    if (paragraphBuffer.length === 0) return;
+    elements.push(
+      <p key={key} className="text-sm leading-relaxed text-gray-700">
+        {renderInlineMarkdown(paragraphBuffer.join(" "))}
+      </p>
+    );
+    paragraphBuffer = [];
   };
 
   lines.forEach((line, i) => {
@@ -2399,29 +2420,35 @@ function RecipeMarkdown({ markdown }: { markdown: string }) {
     const h2Match = line.match(/^##\s+(.*)/);
 
     if (h1Match) {
+      flushParagraph(`fp-${i}`);
       flushList(`fl-${i}`);
-      elements.push(<p key={i} className="mt-3 mb-1 text-sm font-bold text-[#171717]">{h1Match[1]}</p>);
+      elements.push(<p key={i} className="mt-3 mb-1 text-sm font-bold text-[#171717]">{renderInlineMarkdown(h1Match[1])}</p>);
     } else if (h2Match) {
+      flushParagraph(`fp-${i}`);
       flushList(`fl-${i}`);
-      elements.push(<p key={i} className="mt-3 mb-1 text-xs font-bold uppercase tracking-wide text-gray-500">{h2Match[1]}</p>);
+      elements.push(<p key={i} className="mt-3 mb-1 text-xs font-bold uppercase tracking-wide text-gray-500">{renderInlineMarkdown(h2Match[1])}</p>);
     } else if (olMatch) {
+      flushParagraph(`fp-${i}`);
       if (listType === "ul") flushList(`fl-${i}`);
       listType = "ol";
       listBuffer.push(olMatch[1]);
     } else if (ulMatch) {
+      flushParagraph(`fp-${i}`);
       if (listType === "ol") flushList(`fl-${i}`);
       listType = "ul";
       listBuffer.push(ulMatch[1]);
     } else if (line.trim() === "") {
-      flushList(`fl-${i}`);
+      flushParagraph(`fp-${i}`);
+      if (!listType) flushList(`fl-${i}`);
     } else {
       flushList(`fl-${i}`);
-      elements.push(<p key={i} className="text-sm text-gray-700 leading-relaxed">{line}</p>);
+      paragraphBuffer.push(line.trim());
     }
   });
+  flushParagraph("fp-end");
   flushList("fl-end");
 
-  return <div className="mt-2 space-y-1">{elements}</div>;
+  return <div className="mt-2 space-y-2">{elements}</div>;
 }
 
 function PgBtn({ children, onClick, active, disabled }: { children: React.ReactNode; onClick?: () => void; active?: boolean; disabled?: boolean }) {
