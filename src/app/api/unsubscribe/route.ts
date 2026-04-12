@@ -10,10 +10,10 @@ export async function GET(req: NextRequest) {
 
   await db.execute({
     sql: `INSERT INTO email_opt_out (user_id, opted_out_at)
-          VALUES (?, NOW())
+          VALUES (?, ?)
           ON CONFLICT (user_id) DO NOTHING`,
-    args: [uid],
+    args: [uid, new Date().toISOString()],
   });
 
-  return Response.redirect(new URL("/unsubscribe?done=1", req.nextUrl.origin));
+  return Response.redirect(new URL("/victory-gt/unsubscribe?done=1", req.nextUrl.origin));
 }
