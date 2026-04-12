@@ -2152,6 +2152,11 @@ function RecipeModal({
     }
   };
 
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
+
   const step = results !== null ? "results" : "input";
   const label = step === "input" ? "🍳 מצא מוצרים לפי מתכון" : "🛒 מוצרים למתכון";
 
@@ -2200,7 +2205,7 @@ function RecipeModal({
                 placeholder="https://..."
                 value={urlInput}
                 onChange={e => setUrlInput(e.target.value)}
-                className="w-full h-9 rounded-lg border border-gray-300 bg-[#f7f8fa] px-3 text-sm focus:border-[#e31837] focus:outline-none focus:ring-2 focus:ring-[#e31837]/15"
+                className="w-full h-9 rounded-lg border border-gray-300 bg-[#f7f8fa] px-3 text-base focus:border-[#e31837] focus:outline-none focus:ring-2 focus:ring-[#e31837]/15"
                 dir="ltr"
               />
             </div>
@@ -2211,7 +2216,7 @@ function RecipeModal({
                 value={textInput}
                 onChange={e => setTextInput(e.target.value)}
                 rows={3}
-                className="w-full rounded-lg border border-gray-300 bg-[#f7f8fa] px-3 py-2 text-sm focus:border-[#e31837] focus:outline-none focus:ring-2 focus:ring-[#e31837]/15 resize-none"
+                className="w-full rounded-lg border border-gray-300 bg-[#f7f8fa] px-3 py-2 text-base focus:border-[#e31837] focus:outline-none focus:ring-2 focus:ring-[#e31837]/15 resize-none"
               />
             </div>
             <button
