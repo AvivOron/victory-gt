@@ -842,6 +842,11 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
               </div>
             ) : (
               <>
+            {tab === "favourites" && status === "authenticated" && (
+              <div className="mb-3 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-xs text-green-800">
+                נשלח אליכם מייל כשמוצר מהמועדפים שלכם יהיה במבצע. ניתן להסיר את עצמכם מהרשימה בכל עת דרך הקישור בתחתית המייל.
+              </div>
+            )}
             {cartWarning && (
               <div
                 role="alert"

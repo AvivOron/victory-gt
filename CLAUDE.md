@@ -9,7 +9,7 @@ A Next.js 16 grocery price comparison app (Israeli market). TypeScript + Tailwin
 - `src/components/` — UI components (Header, PriceTable, LandingHero, SignInButton, SignOutButton, Providers)
 - `src/lib/db.ts` — DB client + core TypeScript interfaces (Product, Promo, Branch, PromoOriginalItem)
 - `src/lib/auth.ts` — NextAuth config (Google provider, JWT strategy)
-- `turso_schema.sql` — canonical DB schema (tables: branches, products, promos, favourites)
+- `turso_schema.sql` — canonical DB schema (tables: branches, products, promos, favourites, email_opt_out, promo_email_log)
 
 ## Database
 - Driver: `@neondatabase/serverless` (Neon/Postgres), accessed via `db` from `src/lib/db.ts`
@@ -28,6 +28,12 @@ A Next.js 16 grocery price comparison app (Israeli market). TypeScript + Tailwin
 - Synced by the worker via `scripts/sync_images.sh`; missing images are fetched and committed to the repo
 - All image tags use `next/image` (`NextImage`) — never raw `<img>` for product images
 - Cache-Control set to `public, max-age=604800, stale-while-revalidate=86400` via `next.config.ts` headers
+
+## Email notifications
+- Sent via Resend from `discount@avivo.dev` when a favourited product goes on sale (PromoFull scans only)
+- `promo_email_log(user_id, promotion_id)` prevents duplicate emails within a promotion window
+- `email_opt_out(user_id)` — users added here are skipped; populated via `GET /api/unsubscribe?uid=`
+- One digest email per user per scan, not one per promo
 
 ## Conventions
 - All new API routes go under `src/app/api/`

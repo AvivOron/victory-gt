@@ -13,6 +13,7 @@ Price and promotions viewer for the Victory branch in Ganei Tikva. The app reads
 - Show promo labels inside the shopping list
 - Fade unavailable products and block adding them to the cart with an out-of-stock warning
 - Product images displayed in table rows, cart, favourites, promos, and modals (served as static files, cached 7 days)
+- Email digest when a favourited product goes on sale — one email per scan with all relevant promos, unsubscribe link included
 
 ## Stack
 
@@ -83,6 +84,7 @@ Next.js app -> reads products/promos/favourites/household shopping list -> rende
 - Promo modal items now include availability and use the same out-of-stock handling as the main table.
 - Barcode scanning is currently exposed in the mobile prices UI and resolves exact `item_code` matches.
 - Signed-in users get a household invite code so multiple people can share the same shopping list.
+- Discount emails are sent via Resend from `discount@avivo.dev`. The worker tracks sent emails in `promo_email_log` to avoid duplicates within a promotion window. Users can unsubscribe via `/api/unsubscribe?uid=<user_id>`, which writes to `email_opt_out`.
 - For full setup and deployment details, see [SETUP.md](./SETUP.md).
 
 ## Deployment
