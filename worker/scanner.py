@@ -1001,6 +1001,22 @@ def test_notify() -> None:
     rows = db_query("SELECT * FROM promos WHERE branch_id = %s", [branch_id])
     promos = [dict(r) for r in rows]
     log.info("Loaded %d promos from DB for branch %s", len(promos), branch_id)
+
+    # Debug: show date format and active count
+    today = datetime.now().strftime("%Y/%m/%d")
+    log.info("Today string for comparison: %s", today)
+    sample = promos[:3]
+    for p in sample:
+        log.info("Sample promo dates: start=%r end=%r", p.get("start_date"), p.get("end_date"))
+    active = [p for p in promos if p.get("start_date", "") <= today <= p.get("end_date", "")]
+    log.info("Active promos (date filter): %d", len(active))
+
+    fav_rows = db_query("SELECT user_id, user_email, item_code FROM favourites WHERE branch_id = %s", [branch_id])
+    log.info("Favourites for branch: %d", len(fav_rows))
+
+    opted_out = {r["user_id"] for r in db_query("SELECT user_id FROM email_opt_out")}
+    log.info("Opted-out users: %d", len(opted_out))
+
     notify_favourite_discounts(promos)
 
 
