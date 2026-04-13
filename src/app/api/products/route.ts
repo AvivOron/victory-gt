@@ -62,10 +62,14 @@ export async function GET(req: NextRequest) {
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
+  const promoFirstExpr = itemCodes.length > 0
+    ? `CASE WHEN EXISTS (SELECT 1 FROM promos WHERE promos.branch_id = products.branch_id AND promos.item_codes LIKE '%"' || products.item_code || '"%') THEN 0 ELSE 1 END, `
+    : "";
+
   const [dataResult, countResult] = await Promise.all([
     db.execute({
       sql: `SELECT item_code,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,branch_id,last_updated,COALESCE(is_available,TRUE) as is_available
-            FROM products ${where} ORDER BY COALESCE(is_available,TRUE) DESC, ${sortCol} ${dir} LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
+            FROM products ${where} ORDER BY COALESCE(is_available,TRUE) DESC, ${promoFirstExpr}${sortCol} ${dir} LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
       args,
     }),
     db.execute({

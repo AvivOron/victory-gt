@@ -519,14 +519,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
       }
       const res = await fetch(`/victory-gt/api/products?${params}`);
       const data: ProductsResponse = await res.json();
-      const products = tab === "favourites"
-        ? [...data.products].sort((a, b) => {
-            const aHasPromo = (a.discount_promos?.length ?? 0) > 0 ? 0 : 1;
-            const bHasPromo = (b.discount_promos?.length ?? 0) > 0 ? 0 : 1;
-            return aHasPromo - bHasPromo;
-          })
-        : data.products;
-      setProducts(products);
+      setProducts(data.products);
       setTotal(data.total);
       if (tab === "prices") setProductTotalCount(data.total);
       if (data.promoTotal !== null) setPromoTotal(data.promoTotal);
