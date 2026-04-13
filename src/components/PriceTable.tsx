@@ -513,6 +513,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
         dir: sortDir,
       });
       if (tab === "favourites") {
+        params.set("promoFirst", "1");
         for (const code of favouriteCodes) {
           params.append("itemCode", code);
         }

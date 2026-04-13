@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get("q")?.trim() || "";
   const category = searchParams.get("category")?.trim() || "";
   const itemCodes = searchParams.getAll("itemCode").map(code => code.trim()).filter(Boolean);
+  const promoFirst = searchParams.get("promoFirst") === "1";
   const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
   const sort = searchParams.get("sort") || "item_name";
   const dir = searchParams.get("dir") === "desc" ? "DESC" : "ASC";
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
-  const promoFirstExpr = itemCodes.length > 0
+  const promoFirstExpr = promoFirst
     ? `CASE WHEN EXISTS (SELECT 1 FROM promos WHERE promos.branch_id = products.branch_id AND promos.item_codes LIKE '%"' || products.item_code || '"%') THEN 0 ELSE 1 END, `
     : "";
 
