@@ -231,7 +231,7 @@ ${recipeContent}`;
 
       const query = (conds: string[], args: (string | number)[]) => db.execute({
         sql: `SELECT item_code,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,branch_id,last_updated,COALESCE(is_available,TRUE) as is_available
-              FROM products WHERE ${conds.join(" AND ")} ORDER BY item_price ASC LIMIT 30`,
+              FROM products WHERE ${conds.join(" AND ")} AND COALESCE(is_available,TRUE) = TRUE ORDER BY item_price ASC LIMIT 30`,
         args,
       });
 
