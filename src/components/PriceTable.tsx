@@ -128,6 +128,10 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   const [loading, setLoading] = useState(false);
   const [favouriteCodes, setFavouriteCodes] = useState<Set<string>>(new Set());
   const [favouritePendingCode, setFavouritePendingCode] = useState<string | null>(null);
+  const [favouriteView, setFavouriteView] = useState<"mine" | "household">("mine");
+  const [householdFavCodes, setHouseholdFavCodes] = useState<Set<string>>(new Set());
+  const [householdFavLoaded, setHouseholdFavLoaded] = useState(false);
+  const [householdFavLoading, setHouseholdFavLoading] = useState(false);
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
   const [shoppingPendingCode, setShoppingPendingCode] = useState<string | null>(null);
   const [household, setHousehold] = useState<HouseholdInfo | null>(null);
@@ -207,6 +211,30 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   useEffect(() => {
     fetchFavourites();
   }, [fetchFavourites]);
+
+  const fetchHouseholdFavourites = useCallback(async () => {
+    if (status !== "authenticated") return;
+    setHouseholdFavLoading(true);
+    try {
+      const res = await fetch("/victory-gt/api/favourites/household", { cache: "no-store" });
+      if (!res.ok) throw new Error();
+      const data: FavouritesResponse = await res.json();
+      setHouseholdFavCodes(new Set(data.favourites));
+    } catch {
+      setHouseholdFavCodes(new Set());
+    } finally {
+      setHouseholdFavLoading(false);
+      setHouseholdFavLoaded(true);
+    }
+  }, [status]);
+
+  useEffect(() => {
+    void fetchHouseholdFavourites();
+  }, [fetchHouseholdFavourites]);
+
+  useEffect(() => {
+    if (!householdFavLoaded) void fetchHouseholdFavourites();
+  }, [householdFavLoaded, fetchHouseholdFavourites]);
 
   const fetchShoppingList = useCallback(async () => {
     if (status !== "authenticated") {
@@ -544,7 +572,15 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
       });
       if (tab === "favourites") {
         params.set("promoFirst", "1");
-        for (const code of favouriteCodes) {
+        const activeFavCodes = favouriteView === "household" ? householdFavCodes : favouriteCodes;
+        const householdReady = favouriteView !== "household" || householdFavLoaded;
+        if (activeFavCodes.size === 0 && householdReady) {
+          setProducts([]);
+          setTotal(0);
+          setPages(1);
+          return;
+        }
+        for (const code of activeFavCodes) {
           params.append("itemCode", code);
         }
       }
@@ -559,7 +595,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, category, page, sortCol, sortDir, promoCount, tab, favouriteCodes]);
+  }, [debouncedSearch, category, page, sortCol, sortDir, promoCount, tab, favouriteCodes, favouriteView, householdFavCodes, householdFavLoaded]);
 
   // Fetch promos
   const fetchPromos = useCallback(async () => {
@@ -655,6 +691,12 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
         else next.add(itemCode);
         return next;
       });
+      if (!isFavourite) {
+        setHouseholdFavCodes(current => { const next = new Set(current); next.delete(itemCode); return next; });
+      } else {
+        // Unfavourited — item may now appear in household list, refetch
+        setHouseholdFavLoaded(false);
+      }
     } finally {
       setFavouritePendingCode(null);
     }
@@ -876,9 +918,32 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
             ) : (
               <>
             {tab === "favourites" && status === "authenticated" && (
-              <div className="mb-3 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-xs text-green-800">
-                נשלח אליכם מייל כשמוצר מהמועדפים שלכם יהיה במבצע. ניתן להסיר את עצמכם מהרשימה בכל עת דרך הקישור בתחתית המייל.
-              </div>
+              <>
+                <div className="mb-3 flex gap-1 rounded-lg border border-gray-200 bg-gray-100 p-1 w-fit">
+                  <button
+                    onClick={() => { setFavouriteView("mine"); setPage(1); }}
+                    className={`rounded-md px-4 py-1.5 text-sm font-semibold transition-colors ${favouriteView === "mine" ? "bg-white text-[#171717] shadow-sm" : "text-gray-500 hover:text-[#171717]"}`}
+                  >
+                    שלי ({favouriteCodes.size})
+                  </button>
+                  <button
+                    onClick={() => { setFavouriteView("household"); setPage(1); }}
+                    className={`rounded-md px-4 py-1.5 text-sm font-semibold transition-colors ${favouriteView === "household" ? "bg-white text-[#171717] shadow-sm" : "text-gray-500 hover:text-[#171717]"}`}
+                  >
+                    בני משפחה {householdFavLoaded && householdFavCodes.size > 0 ? `(${householdFavCodes.size}+)` : ""}
+                  </button>
+                </div>
+                {favouriteView === "mine" && (
+                  <div className="mb-3 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-xs text-green-800">
+                    נשלח אליכם מייל כשמוצר מהמועדפים שלכם יהיה במבצע. ניתן להסיר את עצמכם מהרשימה בכל עת דרך הקישור בתחתית המייל.
+                  </div>
+                )}
+                {favouriteView === "household" && householdFavLoaded && (
+                  <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-800">
+                    אלה מועדפים של בני המשפחה שלך שעוד אין לך — לחץ ★ כדי להוסיף לשלך
+                  </div>
+                )}
+              </>
             )}
             {cartWarning && (
               <div
@@ -918,7 +983,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                   </thead>
                   <tbody>
                     {products.length === 0 && !loading ? (
-                      <tr><td colSpan={6} className="text-center py-16 text-gray-400">לא נמצאו מוצרים</td></tr>
+                      <tr><td colSpan={6} className="text-center py-16 text-gray-400">{tab === "favourites" && favouriteView === "household" ? "אין מועדפים של בני המשפחה שעוד אין לך" : "לא נמצאו מוצרים"}</td></tr>
                     ) : products.map((p, i) => {
                       const hasDiscount = (p.discount_promos?.length ?? 0) > 0;
                       const unavailable = p.is_available === false;
@@ -1004,7 +1069,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
             {/* Mobile cards */}
             <div className="sm:hidden space-y-2">
               {products.length === 0 && !loading ? (
-                <div className="text-center py-16 text-gray-400">לא נמצאו מוצרים</div>
+                <div className="text-center py-16 text-gray-400">{tab === "favourites" && favouriteView === "household" ? "אין מועדפים של בני המשפחה שעוד אין לך" : "לא נמצאו מוצרים"}</div>
               ) : products.map((p, i) => {
                 const hasDiscount = (p.discount_promos?.length ?? 0) > 0;
                 const unavailable = p.is_available === false;
