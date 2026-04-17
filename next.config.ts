@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   basePath: "/victory-gt",
+  allowedDevOrigins: ["192.168.1.203", "campfire-sphere-unsubtly.ngrok-free.dev"],
   async headers() {
     return [
       {

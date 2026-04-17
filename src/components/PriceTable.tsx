@@ -139,6 +139,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   const [scannerStatus, setScannerStatus] = useState("כוון את המצלמה אל הברקוד");
   const [scannerCode, setScannerCode] = useState<string | null>(null);
   const [scannerProduct, setScannerProduct] = useState<Product | null>(null);
+  const [scannerIsWeightMatch, setScannerIsWeightMatch] = useState(false);
   const [scannerLoadingProduct, setScannerLoadingProduct] = useState(false);
   const [scannerCameraActive, setScannerCameraActive] = useState(false);
   const scannerVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -285,17 +286,43 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   const fetchProductByBarcode = useCallback(async (barcode: string) => {
     setScannerLoadingProduct(true);
     setScannerProduct(null);
+    setScannerIsWeightMatch(false);
     setScannerStatus("מחפש מוצר...");
     try {
-      const params = new URLSearchParams({ q: barcode, page: "1", sort: "item_code", dir: "asc" });
-      const res = await fetch(`/victory-gt/api/products?${params}`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to load product");
-      const data: ProductsResponse = await res.json();
-      const exactMatch = data.products.find(product => product.item_code === barcode) ?? null;
-      setScannerProduct(exactMatch);
-      setScannerStatus(exactMatch ? "המוצר נסרק בהצלחה" : "לא נמצא מוצר עבור הברקוד הזה");
+      // Weight-encoded barcodes (e.g. Victory bakery/deli) start with "2" and embed
+      // a 6-digit item reference in positions 1–6. The DB stores the same item with
+      // a different leading digit (e.g. barcode "2804051..." → item_code "6804051").
+      const weightEmbedded = barcode.length >= 13 && barcode.startsWith("2")
+        ? barcode.slice(1, 7)
+        : null;
+      const suffix6 = barcode.length > 6 ? barcode.slice(-6) : null;
+
+      // Fire all searches in parallel: full barcode, weight-embedded reference, and trailing suffix
+      const queries = Array.from(new Set([barcode, weightEmbedded, suffix6].filter(Boolean) as string[]));
+      const results = await Promise.all(
+        queries.map(q =>
+          fetch(`/victory-gt/api/products?${new URLSearchParams({ q, page: "1", sort: "item_code", dir: "asc" })}`, { cache: "no-store" })
+            .then(async r => { const d: ProductsResponse = await r.json(); return d.products; })
+            .catch(() => [] as Product[])
+        )
+      );
+      const allProducts = results.flat();
+
+      // Priority: 1) exact item_code match, 2) weight-embedded suffix match, 3) barcode-ends-with item_code
+      const exactMatch = allProducts.find(p => p.item_code === barcode) ?? null;
+      const weightMatch = !exactMatch && weightEmbedded
+        ? allProducts.find(p => p.item_code.endsWith(weightEmbedded)) ?? null
+        : null;
+      const suffixMatch = !exactMatch && !weightMatch && suffix6
+        ? allProducts.find(p => barcode.endsWith(p.item_code) && p.item_code.length >= 6) ?? null
+        : null;
+
+      setScannerProduct(exactMatch ?? weightMatch ?? suffixMatch);
+      setScannerIsWeightMatch(!exactMatch && (weightMatch !== null || suffixMatch !== null));
+      setScannerStatus(exactMatch ?? weightMatch ?? suffixMatch ? "המוצר נסרק בהצלחה" : "לא נמצא מוצר עבור הברקוד הזה");
     } catch {
       setScannerProduct(null);
+      setScannerIsWeightMatch(false);
       setScannerStatus("לא הצלחנו לטעון את פרטי המוצר");
     } finally {
       setScannerLoadingProduct(false);
@@ -309,6 +336,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     setScannerError(null);
     setScannerCode(null);
     setScannerProduct(null);
+    setScannerIsWeightMatch(false);
     setScannerCameraActive(false);
     setScannerStatus("מבקש הרשאת מצלמה...");
 
@@ -479,10 +507,12 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
         if (!rawValue) return;
         handled = true;
         scannerControlsRef.current = controls;
-        setScannerCode(rawValue);
-        setScannerStatus(`נסרק: ${rawValue}`);
+        // Some cameras/formats return extended GS1 codes — trim to 13 digits for EAN-13
+        const barcode = /^\d{14,}$/.test(rawValue) ? rawValue.slice(0, 13) : rawValue;
+        setScannerCode(barcode);
+        setScannerStatus(`נסרק: ${barcode}`);
         stopScanner();
-        void fetchProductByBarcode(rawValue);
+        void fetchProductByBarcode(barcode);
       });
     } catch (error) {
       const details = error instanceof Error ? error.message : String(error);
@@ -755,6 +785,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
     setScannerError(null);
     setScannerCode(null);
     setScannerProduct(null);
+    setScannerIsWeightMatch(false);
     setScannerCameraActive(false);
     setScannerStatus("כוון את המצלמה אל הברקוד");
   }, []);
@@ -1212,6 +1243,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
           scannedCode={scannerCode}
           loadingProduct={scannerLoadingProduct}
           product={scannerProduct}
+          isWeightMatch={scannerIsWeightMatch}
           favouriteCodes={favouriteCodes}
           favouritePendingCode={favouritePendingCode}
           shoppingList={shoppingList}
@@ -1445,6 +1477,7 @@ function BarcodeScannerModal({
   scannedCode,
   loadingProduct,
   product,
+  isWeightMatch,
   favouriteCodes,
   favouritePendingCode,
   shoppingList,
@@ -1464,6 +1497,7 @@ function BarcodeScannerModal({
   scannedCode: string | null;
   loadingProduct: boolean;
   product: Product | null;
+  isWeightMatch: boolean;
   favouriteCodes: Set<string>;
   favouritePendingCode: string | null;
   shoppingList: ShoppingListItem[];
@@ -1570,6 +1604,9 @@ function BarcodeScannerModal({
                     <span dir="ltr" className="font-mono">{product.item_code}</span>
                     {product.category && <span> · {product.category}</span>}
                   </p>
+                  {isWeightMatch && (
+                    <p className="mt-1 text-xs text-amber-600">התכוונת למוצר הזה?</p>
+                  )}
                 </div>
               </div>
 
