@@ -44,8 +44,6 @@ RESEND_FROM = "discount@avivo.dev"
 APP_BASE_URL = "https://avivo.dev/victory-gt"
 
 CHAIN_ID = "7290696200003"
-BASE_URL = "https://laibcatalog.co.il/CompetitionRegulationsFiles/latest/"
-API_URL = "https://laibcatalog.co.il/NBCompetitionRegulations.aspx"
 WEBAPI_URL = "https://laibcatalog.co.il/webapi"
 
 HEADERS = {
@@ -341,140 +339,44 @@ def categorize_products(products: list[dict]) -> list[dict]:
 
 
 # ── File index ────────────────────────────────────────────────────────────────
-def _fetch_webapi_files() -> list[str]:
-    """Fetch file list from the new webapi JSON endpoint. Returns [] on failure."""
-    try:
-        r = SESSION.get(f"{WEBAPI_URL}/api/getfiles?edi={CHAIN_ID}", timeout=30)
-        r.raise_for_status()
-        today = datetime.now().strftime("%Y%m%d")
-        files = [
-            f["fileName"]
-            for f in r.json()
-            if today in f.get("fileName", "")
-        ]
-        return list(dict.fromkeys(files))
-    except Exception as e:
-        log.warning("webapi file list failed: %s", e)
-        return []
-
-
-def _scrape_file_list() -> list[str]:
-    """Hit the legacy index page and return filenames for today. Returns [] if blocked."""
-    pattern = re.compile(
-        r'(?:Price|PriceFull|Promo|PromoFull|Stores|StoresFull)'
-        r'\d{13}-\d{3}-\d{12}-\d{3}\.xml\.gz',
-        re.IGNORECASE
-    )
-    today = datetime.now().strftime("%Y%m%d")
-
-    r = SESSION.get(API_URL, params={"code": CHAIN_ID, "fileType": "all"}, timeout=30)
-    r.raise_for_status()
-    files = [f for f in pattern.findall(r.text) if today in f]
-    return list(dict.fromkeys(files))  # deduplicate
-
-
 def fetch_file_list() -> list[str]:
-    """Fetch the current file list, trying new webapi first then legacy scrape."""
     log.info("Fetching file index from site...")
-    names = _fetch_webapi_files()
-    if names:
-        log.info("Found %d files (webapi)", len(names))
-        return names
-    names = _scrape_file_list()
-    log.info("Found %d files (legacy)", len(names))
-    if not names:
-        log.warning("No files returned — site may be rate-limiting. Will use direct URL construction.")
+    r = SESSION.get(f"{WEBAPI_URL}/api/getfiles?edi={CHAIN_ID}", timeout=30)
+    r.raise_for_status()
+    today = datetime.now().strftime("%Y%m%d")
+    names = list(dict.fromkeys(
+        f["fileName"] for f in r.json() if today in f.get("fileName", "")
+    ))
+    log.info("Found %d files", len(names))
     return names
 
 
-def build_branch_urls(branch_id: str) -> list[str]:
-    """Construct file URLs directly without the index, using today's date."""
-    today = datetime.now().strftime("%Y%m%d")
-    # Each file type may have multiple time variants; we try common hour slots
-    types = [
-        ("Price", ""),
-        ("PriceFull", "Full"),
-        ("Promo", ""),
-        ("PromoFull", "Full"),
-    ]
-    candidates = []
-    for hours in ["0500", "0600", "0800", "0900", "1000", "1021", "1200"]:
-        for prefix, _ in types:
-            fname = f"{prefix}{CHAIN_ID}-{branch_id}-{today}{hours}-001.xml.gz"
-            candidates.append(fname)
-    return candidates
-
-
 def file_url(fname: str) -> str:
-    # New webapi uses a different URL structure
-    if fname.endswith(".gz") and not fname.endswith(".xml.gz"):
-        return f"{WEBAPI_URL}/{CHAIN_ID}/{fname}"
-    return f"{BASE_URL}{CHAIN_ID}/{fname}"
+    return f"{WEBAPI_URL}/{CHAIN_ID}/{fname}"
 
 
 # ── Branches ──────────────────────────────────────────────────────────────────
-KNOWN_STORES_FILE = f"StoresFull{CHAIN_ID}-000-{datetime.now().strftime('%Y%m%d')}0600-000.xml.gz"
-
-def _fetch_webapi_branches() -> list[dict]:
-    """Fetch branch list from the new webapi JSON endpoint."""
-    try:
-        r = SESSION.get(f"{WEBAPI_URL}/api/getbranches?edi={CHAIN_ID}", timeout=30)
-        r.raise_for_status()
-        now = datetime.now(timezone.utc).isoformat()
-        branches = []
-        for b in r.json():
-            bid = str(b.get("number") or b.get("Number") or "").zfill(3)
-            name = b.get("name") or b.get("Name") or ""
-            if not bid or bid == "000":
-                continue
-            branches.append({
-                "branch_id": bid,
-                "chain_id": CHAIN_ID,
-                "store_name": name,
-                "city": name,
-                "address": "",
-                "zip_code": "",
-                "last_updated": now,
-            })
-        log.info("Fetched %d branches (webapi)", len(branches))
-        return branches
-    except Exception as e:
-        log.warning("webapi branches failed: %s", e)
-        return []
-
-
-def fetch_branches(files: list[str]) -> list[dict]:
-    branches = _fetch_webapi_branches()
-    if branches:
-        return branches
-    store_files = [f for f in files if "stores" in f.lower()]
-    # Always include the known direct URL as fallback
-    if not store_files:
-        store_files = [KNOWN_STORES_FILE]
-    for fname in store_files:
-        try:
-            log.info("Fetching stores file: %s", fname)
-            data = fetch_bytes(file_url(fname))
-            root = parse_xml_gz(data)
-            branches = []
-            for store in root.iter("Branch"):
-                bid = get_text(store, "StoreID") or get_text(store, "StoreId") or get_text(store, "BranchNumber")
-                if not bid:
-                    continue
-                branches.append({
-                    "branch_id": bid,
-                    "chain_id": CHAIN_ID,
-                    "store_name": get_text(store, "StoreName") or get_text(store, "ChainName"),
-                    "city": get_text(store, "City"),
-                    "address": get_text(store, "Address"),
-                    "zip_code": get_text(store, "ZIPCode") or get_text(store, "ZipCode"),
-                    "last_updated": datetime.now(timezone.utc).isoformat(),
-                })
-            log.info("Parsed %d branches", len(branches))
-            return branches
-        except Exception as e:
-            log.warning("Failed to parse %s: %s", fname, e)
-    return []
+def fetch_branches() -> list[dict]:
+    r = SESSION.get(f"{WEBAPI_URL}/api/getbranches?edi={CHAIN_ID}", timeout=30)
+    r.raise_for_status()
+    now = datetime.now(timezone.utc).isoformat()
+    branches = []
+    for b in r.json():
+        bid = str(b.get("number") or b.get("Number") or "").zfill(3)
+        name = b.get("name") or b.get("Name") or ""
+        if not bid or bid == "000":
+            continue
+        branches.append({
+            "branch_id": bid,
+            "chain_id": CHAIN_ID,
+            "store_name": name,
+            "city": name,
+            "address": "",
+            "zip_code": "",
+            "last_updated": now,
+        })
+    log.info("Fetched %d branches", len(branches))
+    return branches
 
 
 def find_ganei_tikva(branches: list[dict]) -> str | None:
@@ -535,16 +437,33 @@ def parse_promos(data: bytes, branch_id: str) -> list[dict]:
             if not pid:
                 continue
             item_codes = [el.text.strip() for el in promo.iter("ItemCode") if el.text]
+            # Fields may be direct children (old format) or nested under Groups/Group/PromotionItem (new format)
+            first_item = next(promo.iter("PromotionItem"), None)
+            first_group = next(promo.iter("Group"), None)
+            def _nested(direct_tag, *fallback_tags):
+                v = get_text(promo, direct_tag)
+                if v:
+                    return v
+                for tag in fallback_tags:
+                    if first_item is not None:
+                        v = get_text(first_item, tag)
+                        if v:
+                            return v
+                    if first_group is not None:
+                        v = get_text(first_group, tag)
+                        if v:
+                            return v
+                return ""
             promos.append({
                 "promotion_id": pid,
                 "description": get_text(promo, "PromotionDescription") or get_text(promo, "RewardDescription"),
-                "discount_rate": get_text(promo, "DiscountRate"),
-                "min_qty": get_text(promo, "MinQty"),
-                "max_qty": get_text(promo, "MaxQty"),
-                "min_purchase_amount": get_text(promo, "MinPurchaseAmnt") or get_text(promo, "MinPurchaseAmount"),
-                "discounted_price": get_text(promo, "DiscountedPrice"),
-                "start_date": get_text(promo, "PromotionStartDate"),
-                "end_date": get_text(promo, "PromotionEndDate"),
+                "discount_rate": _nested("DiscountRate"),
+                "min_qty": _nested("MinQty", "MinNoOfItemOffered"),
+                "max_qty": _nested("MaxQty"),
+                "min_purchase_amount": _nested("MinPurchaseAmnt", "MinPurchaseAmount"),
+                "discounted_price": _nested("DiscountedPrice"),
+                "start_date": get_text(promo, "PromotionStartDate") or get_text(promo, "PromotionStartDateTime"),
+                "end_date": get_text(promo, "PromotionEndDate") or get_text(promo, "PromotionEndDateTime"),
                 "item_codes": json.dumps(item_codes, ensure_ascii=False),
                 "branch_id": branch_id,
                 "last_updated": now,
@@ -583,9 +502,6 @@ def parse_promos(data: bytes, branch_id: str) -> list[dict]:
 
 def fetch_branch_data(branch_id: str, files: list[str]) -> tuple[list[dict], list[dict]]:
     branch_files = [f for f in files if f"-{branch_id}-" in f]
-    if not branch_files:
-        log.info("No files from index for branch %s — trying direct URL construction", branch_id)
-        branch_files = build_branch_urls(branch_id)
     log.info("Branch %s: trying %d files", branch_id, len(branch_files))
 
     all_products: list[dict] = []
@@ -1003,7 +919,7 @@ def run_scan() -> None:
     ensure_schema()
 
     files = fetch_file_list()
-    branches = fetch_branches(files)
+    branches = fetch_branches()
 
     if branches:
         upsert_branches(branches)
