@@ -46,6 +46,7 @@ APP_BASE_URL = "https://avivo.dev/victory-gt"
 CHAIN_ID = "7290696200003"
 BASE_URL = "https://laibcatalog.co.il/CompetitionRegulationsFiles/latest/"
 API_URL = "https://laibcatalog.co.il/NBCompetitionRegulations.aspx"
+WEBAPI_URL = "https://laibcatalog.co.il/webapi"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -219,7 +220,19 @@ def fetch_bytes(url: str, timeout: int = 30) -> bytes:
 def parse_xml_gz(data: bytes) -> ET.Element:
     with gzip.GzipFile(fileobj=BytesIO(data)) as f:
         content = f.read()
-    return ET.fromstring(content)
+    try:
+        return ET.fromstring(content)
+    except ET.ParseError:
+        # Some retailer feeds have a trailing malformed tag after the root closes.
+        # Find the last occurrence of the root closing tag and truncate there.
+        for tag in (b"</Root>", b"</Prices>", b"</Promos>", b"</Store>", b"</Stores>"):
+            idx = content.rfind(tag)
+            if idx != -1:
+                try:
+                    return ET.fromstring(content[:idx + len(tag)])
+                except ET.ParseError:
+                    continue
+        raise
 
 
 def get_text(el: ET.Element, tag: str, default: str = "") -> str:
@@ -328,8 +341,25 @@ def categorize_products(products: list[dict]) -> list[dict]:
 
 
 # ── File index ────────────────────────────────────────────────────────────────
+def _fetch_webapi_files() -> list[str]:
+    """Fetch file list from the new webapi JSON endpoint. Returns [] on failure."""
+    try:
+        r = SESSION.get(f"{WEBAPI_URL}/api/getfiles?edi={CHAIN_ID}", timeout=30)
+        r.raise_for_status()
+        today = datetime.now().strftime("%Y%m%d")
+        files = [
+            f["fileName"]
+            for f in r.json()
+            if today in f.get("fileName", "")
+        ]
+        return list(dict.fromkeys(files))
+    except Exception as e:
+        log.warning("webapi file list failed: %s", e)
+        return []
+
+
 def _scrape_file_list() -> list[str]:
-    """Hit the index page and return filenames for today. Returns [] if blocked."""
+    """Hit the legacy index page and return filenames for today. Returns [] if blocked."""
     pattern = re.compile(
         r'(?:Price|PriceFull|Promo|PromoFull|Stores|StoresFull)'
         r'\d{13}-\d{3}-\d{12}-\d{3}\.xml\.gz',
@@ -344,10 +374,14 @@ def _scrape_file_list() -> list[str]:
 
 
 def fetch_file_list() -> list[str]:
-    """Fetch the current file list from the site."""
+    """Fetch the current file list, trying new webapi first then legacy scrape."""
     log.info("Fetching file index from site...")
+    names = _fetch_webapi_files()
+    if names:
+        log.info("Found %d files (webapi)", len(names))
+        return names
     names = _scrape_file_list()
-    log.info("Found %d files", len(names))
+    log.info("Found %d files (legacy)", len(names))
     if not names:
         log.warning("No files returned — site may be rate-limiting. Will use direct URL construction.")
     return names
@@ -372,13 +406,47 @@ def build_branch_urls(branch_id: str) -> list[str]:
 
 
 def file_url(fname: str) -> str:
+    # New webapi uses a different URL structure
+    if fname.endswith(".gz") and not fname.endswith(".xml.gz"):
+        return f"{WEBAPI_URL}/{CHAIN_ID}/{fname}"
     return f"{BASE_URL}{CHAIN_ID}/{fname}"
 
 
 # ── Branches ──────────────────────────────────────────────────────────────────
 KNOWN_STORES_FILE = f"StoresFull{CHAIN_ID}-000-{datetime.now().strftime('%Y%m%d')}0600-000.xml.gz"
 
+def _fetch_webapi_branches() -> list[dict]:
+    """Fetch branch list from the new webapi JSON endpoint."""
+    try:
+        r = SESSION.get(f"{WEBAPI_URL}/api/getbranches?edi={CHAIN_ID}", timeout=30)
+        r.raise_for_status()
+        now = datetime.now(timezone.utc).isoformat()
+        branches = []
+        for b in r.json():
+            bid = str(b.get("number") or b.get("Number") or "").zfill(3)
+            name = b.get("name") or b.get("Name") or ""
+            if not bid or bid == "000":
+                continue
+            branches.append({
+                "branch_id": bid,
+                "chain_id": CHAIN_ID,
+                "store_name": name,
+                "city": name,
+                "address": "",
+                "zip_code": "",
+                "last_updated": now,
+            })
+        log.info("Fetched %d branches (webapi)", len(branches))
+        return branches
+    except Exception as e:
+        log.warning("webapi branches failed: %s", e)
+        return []
+
+
 def fetch_branches(files: list[str]) -> list[dict]:
+    branches = _fetch_webapi_branches()
+    if branches:
+        return branches
     store_files = [f for f in files if "stores" in f.lower()]
     # Always include the known direct URL as fallback
     if not store_files:
@@ -969,17 +1037,26 @@ def run_scan() -> None:
     if not new_files:
         log.info("Source files unchanged — skipping upsert.")
     else:
+        # Keep only the latest Full file per type; drop all incrementals when a Full exists.
+        full_price_files = sorted(f for f in new_files if f.startswith("PriceFull"))
+        full_promo_files = sorted(f for f in new_files if f.startswith("PromoFull"))
+        has_full_price = bool(full_price_files)
+        has_full_promo = bool(full_promo_files)
+        if has_full_price:
+            new_files = [f for f in new_files if not f.startswith("Price")]
+            new_files.append(full_price_files[-1])
+        if has_full_promo:
+            new_files = [f for f in new_files if not f.startswith("Promo")]
+            new_files.append(full_promo_files[-1])
         log.info("Processing %d new file(s): %s", len(new_files), new_files)
         products, promos = fetch_branch_data(branch_id, new_files)
         products = categorize_products(products)
         upsert_products(products)
         upsert_promos(promos)
-        has_full_price = any(f.startswith("PriceFull") for f in new_files)
         if has_full_price:
             mark_unavailable_products(branch_id, {p["item_code"] for p in products})
         else:
             log.info("No PriceFull in new files — skipping mark_unavailable_products")
-        has_full_promo = any(f.startswith("PromoFull") for f in new_files)
         if has_full_promo:
             delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
             notify_favourite_discounts(promos)
