@@ -420,7 +420,7 @@ def parse_prices(data: bytes, branch_id: str) -> list[dict]:
             continue
         products.append({
             "item_code": code,
-            "item_name": get_text(item, "ItemName") or get_text(item, "ManufacturerItemDescription"),
+            "item_name": get_text(item, "ManufactureItemDescription") or get_text(item, "ManufacturerItemDescription") or get_text(item, "ItemName"),
             "item_price": price,
             # UnitQty / UnitOfMeasureName / UnitOfMeasure / UnitMeasure
             "unit_of_measure": (get_text(item, "UnitOfMeasureName")
