@@ -308,6 +308,20 @@ def categorize_with_gemini(rows: list[dict]) -> dict[str, str]:
     }
 
 
+def seed_category_cache_from_db() -> None:
+    """Populate the local cache from DB categories to avoid re-categorizing known products."""
+    cache = load_category_cache()
+    rows = db_query("SELECT item_code, category FROM products WHERE category IS NOT NULL AND category != %s", [DEFAULT_CATEGORY])
+    added = 0
+    for r in rows:
+        if r["item_code"] not in cache:
+            cache[r["item_code"]] = r["category"]
+            added += 1
+    if added:
+        save_category_cache(cache)
+        log.info("Seeded %d categories from DB into local cache", added)
+
+
 def categorize_products(products: list[dict]) -> list[dict]:
     if not products:
         return products
@@ -917,6 +931,7 @@ def run_scan() -> None:
     log.info("=== Starting Victory GT scan ===")
     start = time.time()
     ensure_schema()
+    seed_category_cache_from_db()
 
     files = fetch_file_list()
     branches = fetch_branches()
