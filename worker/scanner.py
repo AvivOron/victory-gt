@@ -445,6 +445,7 @@ def parse_prices(data: bytes, branch_id: str) -> list[dict]:
             "manufacturer_name": get_text(item, "ManufacturerName") or get_text(item, "ManufactureName"),
             "branch_id": branch_id,
             "last_updated": now,
+            "price_update_time": get_text(item, "PriceUpdateTime"),
         })
     return products
 
@@ -457,43 +458,49 @@ def parse_promos(data: bytes, branch_id: str) -> list[dict]:
     sale_els = list(root.iter("Sale"))
 
     if promotion_els:
-        # Standard format: one <Promotion> per promo, items nested inside
+        # One <Promotion> element per item (new format) — group by PromotionID
+        grouped: dict[str, dict] = {}
         for promo in promotion_els:
             pid = get_text(promo, "PromotionId") or get_text(promo, "PromotionID")
             if not pid:
                 continue
             item_codes = [el.text.strip() for el in promo.iter("ItemCode") if el.text]
-            # Fields may be direct children (old format) or nested under Groups/Group/PromotionItem (new format)
-            first_item = next(promo.iter("PromotionItem"), None)
-            first_group = next(promo.iter("Group"), None)
-            def _nested(direct_tag, *fallback_tags):
-                v = get_text(promo, direct_tag)
-                if v:
-                    return v
-                for tag in fallback_tags:
-                    if first_item is not None:
-                        v = get_text(first_item, tag)
-                        if v:
-                            return v
-                    if first_group is not None:
-                        v = get_text(first_group, tag)
-                        if v:
-                            return v
-                return ""
-            promos.append({
-                "promotion_id": pid,
-                "description": get_text(promo, "PromotionDescription") or get_text(promo, "RewardDescription"),
-                "discount_rate": _nested("DiscountRate"),
-                "min_qty": _nested("MinQty", "MinNoOfItemOffered"),
-                "max_qty": _nested("MaxQty"),
-                "min_purchase_amount": _nested("MinPurchaseAmnt", "MinPurchaseAmount"),
-                "discounted_price": _nested("DiscountedPrice"),
-                "start_date": get_text(promo, "PromotionStartDate") or get_text(promo, "PromotionStartDateTime"),
-                "end_date": get_text(promo, "PromotionEndDate") or get_text(promo, "PromotionEndDateTime"),
-                "item_codes": json.dumps(item_codes, ensure_ascii=False),
-                "branch_id": branch_id,
-                "last_updated": now,
-            })
+            if pid not in grouped:
+                first_item = next(promo.iter("PromotionItem"), None)
+                first_group = next(promo.iter("Group"), None)
+                def _nested(direct_tag, *fallback_tags, _promo=promo, _fi=first_item, _fg=first_group):
+                    v = get_text(_promo, direct_tag)
+                    if v:
+                        return v
+                    for tag in fallback_tags:
+                        if _fi is not None:
+                            v = get_text(_fi, tag)
+                            if v:
+                                return v
+                        if _fg is not None:
+                            v = get_text(_fg, tag)
+                            if v:
+                                return v
+                    return ""
+                grouped[pid] = {
+                    "promotion_id": pid,
+                    "description": get_text(promo, "PromotionDescription") or get_text(promo, "RewardDescription"),
+                    "discount_rate": _nested("DiscountRate"),
+                    "min_qty": _nested("MinQty", "MinNoOfItemOffered"),
+                    "max_qty": _nested("MaxQty"),
+                    "min_purchase_amount": _nested("MinPurchaseAmnt", "MinPurchaseAmount"),
+                    "discounted_price": _nested("DiscountedPrice"),
+                    "start_date": get_text(promo, "PromotionStartDate") or get_text(promo, "PromotionStartDateTime"),
+                    "end_date": get_text(promo, "PromotionEndDate") or get_text(promo, "PromotionEndDateTime"),
+                    "item_codes": [],
+                    "branch_id": branch_id,
+                    "last_updated": now,
+                    "promotion_update_time": get_text(promo, "PromotionUpdateTime"),
+                }
+            grouped[pid]["item_codes"].extend(item_codes)
+        for p in grouped.values():
+            p["item_codes"] = json.dumps(p["item_codes"], ensure_ascii=False)
+            promos.append(p)
     elif sale_els:
         # Victory format: one <Sale> per item — group by PromotionID
         grouped: dict[str, dict] = {}
@@ -550,6 +557,23 @@ def fetch_branch_data(branch_id: str, files: list[str]) -> tuple[list[dict], lis
                 all_products.extend(rows)
             elif kind == "promo":
                 all_promos.extend(rows)
+
+    # Deduplicate: keep the entry with the latest update time per key
+    if all_products:
+        seen: dict[str, dict] = {}
+        for p in all_products:
+            code = p["item_code"]
+            if code not in seen or p.get("price_update_time", "") > seen[code].get("price_update_time", ""):
+                seen[code] = p
+        all_products = list(seen.values())
+
+    if all_promos:
+        seen_promos: dict[str, dict] = {}
+        for p in all_promos:
+            pid = p["promotion_id"]
+            if pid not in seen_promos or p.get("last_updated", "") > seen_promos[pid].get("last_updated", ""):
+                seen_promos[pid] = p
+        all_promos = list(seen_promos.values())
 
     log.info("Branch %s: %d products, %d promos", branch_id, len(all_products), len(all_promos))
     return all_products, all_promos
@@ -980,17 +1004,8 @@ def run_scan() -> None:
     if not new_files:
         log.info("Source files unchanged — skipping upsert.")
     else:
-        # Keep only the latest Full file per type; drop all incrementals when a Full exists.
-        full_price_files = sorted(f for f in new_files if f.startswith("PriceFull"))
-        full_promo_files = sorted(f for f in new_files if f.startswith("PromoFull"))
-        has_full_price = bool(full_price_files)
-        has_full_promo = bool(full_promo_files)
-        if has_full_price:
-            new_files = [f for f in new_files if not f.startswith("Price")]
-            new_files.append(full_price_files[-1])
-        if has_full_promo:
-            new_files = [f for f in new_files if not f.startswith("Promo")]
-            new_files.append(full_promo_files[-1])
+        has_full_price = any(f.startswith("PriceFull") for f in new_files)
+        has_full_promo = any(f.startswith("PromoFull") for f in new_files)
         log.info("Processing %d new file(s): %s", len(new_files), new_files)
         products, promos = fetch_branch_data(branch_id, new_files)
         products = categorize_products(products)
