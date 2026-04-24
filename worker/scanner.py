@@ -403,6 +403,15 @@ def find_ganei_tikva(branches: list[dict]) -> str | None:
 
 
 # ── Price / promo parsers ─────────────────────────────────────────────────────
+def _best_name(item_name: str, desc: str) -> str:
+    """Prefer desc when it's meaningfully longer and not truncated/garbled."""
+    item_name = item_name.strip()
+    desc = desc.strip()
+    if desc and len(desc) > len(item_name) and not re.search(r'^\d', desc) and not re.search(r'\d+$', desc):
+        return desc
+    return item_name or desc
+
+
 def parse_prices(data: bytes, branch_id: str) -> list[dict]:
     root = parse_xml_gz(data)
     now = datetime.now(timezone.utc).isoformat()
@@ -420,7 +429,10 @@ def parse_prices(data: bytes, branch_id: str) -> list[dict]:
             continue
         products.append({
             "item_code": code,
-            "item_name": get_text(item, "ManufactureItemDescription") or get_text(item, "ManufacturerItemDescription") or get_text(item, "ItemName"),
+            "item_name": _best_name(
+                get_text(item, "ItemName"),
+                get_text(item, "ManufactureItemDescription") or get_text(item, "ManufacturerItemDescription"),
+            ),
             "item_price": price,
             # UnitQty / UnitOfMeasureName / UnitOfMeasure / UnitMeasure
             "unit_of_measure": (get_text(item, "UnitOfMeasureName")
