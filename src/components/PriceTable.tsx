@@ -974,7 +974,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                   <thead>
                     <tr className="bg-[#171717] text-white">
                       <th onClick={() => handleSort("item_name")} className="px-4 py-3 text-right text-xs font-bold uppercase whitespace-nowrap select-none cursor-pointer hover:bg-white/10">
-                        <span style={{ paddingRight: "7.5rem" }}>שם מוצר{sortIcon("item_name")}</span>
+                        <span style={{ paddingRight: "4.5rem" }}>שם מוצר{sortIcon("item_name")}</span>
                       </th>
                       <Th onClick={() => handleSort("item_code")}>ברקוד{sortIcon("item_code")}</Th>
                       <Th onClick={() => handleSort("item_price")}>מחיר{sortIcon("item_price")}</Th>
@@ -1011,18 +1011,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                               } ${favouritePendingCode === p.item_code ? "cursor-wait opacity-60" : ""}`}
                               aria-label={favouriteCodes.has(p.item_code) ? "הסרה ממועדפים" : "שמירה במועדפים"}
                               title={status === "authenticated" ? "שמירה במועדפים" : "נדרשת התחברות עם Google"}
-                            >
-                              ★
-                            </button>
-                            {(() => { const hasPriceHistory = (p.price_history?.length ?? 0) >= 2; return (
-                              <button
-                                type="button"
-                                onClick={e => { e.stopPropagation(); if (hasPriceHistory) setPriceHistoryProduct(p); }}
-                                disabled={!hasPriceHistory}
-                                className={`h-8 w-8 flex-shrink-0 rounded-lg border text-sm transition-colors ${hasPriceHistory ? "border-purple-400 bg-purple-50 text-purple-600 hover:border-purple-600 hover:bg-purple-100" : "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed grayscale opacity-60"}`}
-                                aria-label="היסטוריית מחיר"
-                              >📈</button>
-                            ); })()}
+                            >★</button>
                             <div className="mt-0.5 flex-shrink-0 flex justify-center">
                               {(() => { const cartItem = shoppingList.find(i => i.item_code === p.item_code); return cartItem ? (
                                 <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
@@ -1048,7 +1037,19 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-400 text-xs font-mono truncate" dir="ltr">{p.item_code}</td>
-                        <td className="px-4 py-3 font-bold text-green-700 whitespace-nowrap">₪{Number(p.item_price).toFixed(2)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold text-green-700">₪{Number(p.item_price).toFixed(2)}</span>
+                            {(p.price_history?.length ?? 0) >= 2 && (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); setPriceHistoryProduct(p); }}
+                                className="h-7 w-7 flex-shrink-0 rounded-lg text-purple-500 transition-colors hover:bg-purple-50 hover:text-purple-700"
+                                aria-label="היסטוריית מחיר"
+                              ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><polyline points="1,11 5,7 8,9 15,3"/><polyline points="11,3 15,3 15,7"/></svg></button>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-3">
                           {p.unit_of_measure && (
                             <span className="inline-block rounded-lg border border-sky-100 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">{p.unit_of_measure}</span>
@@ -1088,81 +1089,70 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                 <div
                   key={p.item_code + i}
                   onClick={hasDiscount ? () => setSelectedProduct(p) : undefined}
-                  className={`flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-colors ${hasDiscount ? "cursor-pointer hover:bg-red-50/70" : ""} ${unavailable ? "opacity-40" : ""}`}
+                  className={`rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition-colors ${hasDiscount ? "cursor-pointer hover:bg-red-50/70" : ""} ${unavailable ? "opacity-40" : ""}`}
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start gap-2">
+                  {/* Top row: image + product info */}
+                  <div className="flex items-start gap-3">
+                    <button type="button" onClick={e => { e.stopPropagation(); setImageModalProduct(p); }} className="flex-shrink-0 mt-0.5">
+                      <ProductImage itemCode={p.item_code} itemName={p.item_name} width={44} height={44} className="rounded object-contain hover:opacity-80 transition-opacity" />
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-sm leading-snug">{p.item_name}</p>
+                      {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {p.manufacturer_name && <span>{p.manufacturer_name} · </span>}
+                        <span dir="ltr" className="font-mono">{p.item_code}</span>
+                      </p>
+                    </div>
+                  </div>
+                  {/* Bottom row: price + action buttons */}
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl font-bold text-green-700 whitespace-nowrap">₪{Number(p.item_price).toFixed(2)}</span>
+                      {(p.price_history?.length ?? 0) >= 2 && (
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); setPriceHistoryProduct(p); }}
+                          className="h-8 w-8 flex-shrink-0 rounded-lg text-purple-500 transition-colors hover:bg-purple-50 hover:text-purple-700"
+                          aria-label="היסטוריית מחיר"
+                        ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><polyline points="1,11 5,7 8,9 15,3"/><polyline points="11,3 15,3 15,7"/></svg></button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {hasDiscount && (
+                        <button
+                          onClick={event => { event.stopPropagation(); setSelectedProduct(p); }}
+                          className="rounded-lg bg-[#e31837] px-3 py-1.5 text-xs font-bold text-white"
+                        >
+                          מבצע
+                        </button>
+                      )}
+                      {(() => { const cartItem = shoppingList.find(i => i.item_code === p.item_code); return cartItem ? (
+                        <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
+                          <button type="button" onClick={e => { e.stopPropagation(); void decrementCart(p); }} disabled={shoppingPendingCode === p.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הפחת כמות">−</button>
+                          <span className="flex min-w-[1.75rem] items-center justify-center text-center text-sm font-bold tabular-nums">
+                            {shoppingPendingCode === p.item_code ? <InlineSpinner /> : cartItem.quantity}
+                          </span>
+                          <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className={`h-8 w-8 rounded-lg border text-sm transition-colors border-gray-200 bg-white text-gray-400 hover:border-green-600 hover:text-green-600 ${shoppingPendingCode === p.item_code ? "cursor-wait opacity-60" : ""}`} aria-label="הוספה לרשימת קניות">
+                          {shoppingPendingCode === p.item_code ? <InlineSpinner /> : "🛒"}
+                        </button>
+                      ); })()}
                       <button
                         type="button"
-                        onClick={event => {
-                          event.stopPropagation();
-                          void toggleFavourite(p.item_code);
-                        }}
+                        onClick={event => { event.stopPropagation(); void toggleFavourite(p.item_code); }}
                         disabled={favouritePendingCode === p.item_code}
-                        className={`mt-0.5 h-8 w-8 flex-shrink-0 rounded-lg border text-sm transition-colors ${
+                        className={`h-8 w-8 flex-shrink-0 rounded-lg border text-sm transition-colors ${
                           favouriteCodes.has(p.item_code)
                             ? "border-[#e31837] bg-red-50 text-[#e31837]"
                             : "border-gray-200 bg-white text-gray-400 hover:border-[#e31837] hover:text-[#e31837]"
                         } ${favouritePendingCode === p.item_code ? "cursor-wait opacity-60" : ""}`}
                         aria-label={favouriteCodes.has(p.item_code) ? "הסרה ממועדפים" : "שמירה במועדפים"}
                         title={status === "authenticated" ? "שמירה במועדפים" : "נדרשת התחברות עם Google"}
-                      >
-                        ★
-                      </button>
-                      <div className="mt-0.5 flex-shrink-0 flex justify-center">
-                        {(() => { const cartItem = shoppingList.find(i => i.item_code === p.item_code); return cartItem ? (
-                          <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
-                            <button type="button" onClick={e => { e.stopPropagation(); void decrementCart(p); }} disabled={shoppingPendingCode === p.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הפחת כמות">−</button>
-                            <span className="flex min-w-[1.75rem] items-center justify-center text-center text-sm font-bold tabular-nums">
-                              {shoppingPendingCode === p.item_code ? <InlineSpinner /> : cartItem.quantity}
-                            </span>
-                            <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className="h-8 w-7 text-base leading-none hover:bg-green-100 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
-                          </div>
-                        ) : (
-                          <button type="button" onClick={e => { e.stopPropagation(); void addToCart(p); }} disabled={shoppingPendingCode === p.item_code} className={`h-8 w-8 rounded-lg border text-sm transition-colors border-gray-200 bg-white text-gray-400 hover:border-green-600 hover:text-green-600 ${shoppingPendingCode === p.item_code ? "cursor-wait opacity-60" : ""}`} aria-label="הוספה לרשימת קניות">
-                            {shoppingPendingCode === p.item_code ? <InlineSpinner /> : "🛒"}
-                          </button>
-                        ); })()}
-                      </div>
-                      <button type="button" onClick={e => { e.stopPropagation(); setImageModalProduct(p); }} className="flex-shrink-0">
-                        <ProductImage itemCode={p.item_code} itemName={p.item_name} width={40} height={40} className="rounded object-contain hover:opacity-80 transition-opacity" />
-                      </button>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-sm leading-snug truncate">{p.item_name}</p>
-                        {p.category && <p className="mt-0.5 text-xs text-gray-400">{p.category}</p>}
-                      </div>
+                      >★</button>
                     </div>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {p.manufacturer_name && <span>{p.manufacturer_name} · </span>}
-                      <span dir="ltr" className="font-mono">{p.item_code}</span>
-                    </p>
-                    {hasDiscount && (
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        {hasDiscount && (
-                          <button
-                            onClick={event => {
-                              event.stopPropagation();
-                              setSelectedProduct(p);
-                            }}
-                            className="rounded-lg bg-[#e31837] px-3 py-1 text-xs font-bold text-white"
-                          >
-                            מבצע
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                    <span className="text-xl font-bold text-green-700 whitespace-nowrap">₪{Number(p.item_price).toFixed(2)}</span>
-                    {(() => { const hasPriceHistory = (p.price_history?.length ?? 0) >= 2; return (
-                      <button
-                        type="button"
-                        onClick={e => { e.stopPropagation(); if (hasPriceHistory) setPriceHistoryProduct(p); }}
-                        disabled={!hasPriceHistory}
-                        className={`h-7 w-7 flex-shrink-0 rounded-lg border text-xs transition-colors ${hasPriceHistory ? "border-purple-400 bg-purple-50 text-purple-600 hover:border-purple-600 hover:bg-purple-100" : "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed grayscale opacity-60"}`}
-                        aria-label="היסטוריית מחיר"
-                      >📈</button>
-                    ); })()}
                   </div>
                 </div>
                 );
