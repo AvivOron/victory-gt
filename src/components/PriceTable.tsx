@@ -1014,6 +1014,15 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                             >
                               ★
                             </button>
+                            {(() => { const hasPriceHistory = (p.price_history?.length ?? 0) >= 2; return (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); if (hasPriceHistory) setPriceHistoryProduct(p); }}
+                                disabled={!hasPriceHistory}
+                                className={`h-8 w-8 flex-shrink-0 rounded-lg border text-sm transition-colors ${hasPriceHistory ? "border-purple-400 bg-purple-50 text-purple-600 hover:border-purple-600 hover:bg-purple-100" : "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed grayscale opacity-60"}`}
+                                aria-label="היסטוריית מחיר"
+                              >📈</button>
+                            ); })()}
                             <div className="mt-0.5 flex-shrink-0 flex justify-center">
                               {(() => { const cartItem = shoppingList.find(i => i.item_code === p.item_code); return cartItem ? (
                                 <div className="flex items-center rounded-lg border border-green-600 bg-green-50 text-green-700 overflow-hidden">
@@ -1029,15 +1038,6 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                                 </button>
                               ); })()}
                             </div>
-                            {(() => { const hasPriceHistory = (p.price_history?.length ?? 0) >= 2; return (
-                              <button
-                                type="button"
-                                onClick={e => { e.stopPropagation(); if (hasPriceHistory) setPriceHistoryProduct(p); }}
-                                disabled={!hasPriceHistory}
-                                className={`h-8 w-8 flex-shrink-0 rounded-lg border text-sm transition-colors ${hasPriceHistory ? "border-purple-400 bg-purple-50 text-purple-600 hover:border-purple-600 hover:bg-purple-100" : "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed grayscale opacity-60"}`}
-                                aria-label="היסטוריית מחיר"
-                              >📈</button>
-                            ); })()}
                             <button type="button" onClick={e => { e.stopPropagation(); setImageModalProduct(p); }} className="flex-shrink-0">
                               <ProductImage itemCode={p.item_code} itemName={p.item_name} width={40} height={40} className="rounded object-contain hover:opacity-80 transition-opacity" />
                             </button>
@@ -1124,15 +1124,6 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                           </button>
                         ); })()}
                       </div>
-                      {(() => { const hasPriceHistory = (p.price_history?.length ?? 0) >= 2; return (
-                        <button
-                          type="button"
-                          onClick={e => { e.stopPropagation(); if (hasPriceHistory) setPriceHistoryProduct(p); }}
-                          disabled={!hasPriceHistory}
-                          className={`mt-0.5 h-8 w-8 flex-shrink-0 rounded-lg border text-sm transition-colors ${hasPriceHistory ? "border-purple-400 bg-purple-50 text-purple-600 hover:border-purple-600 hover:bg-purple-100" : "border-gray-200 bg-white text-gray-300 cursor-not-allowed opacity-50"}`}
-                          aria-label="היסטוריית מחיר"
-                        >📈</button>
-                      ); })()}
                       <button type="button" onClick={e => { e.stopPropagation(); setImageModalProduct(p); }} className="flex-shrink-0">
                         <ProductImage itemCode={p.item_code} itemName={p.item_name} width={40} height={40} className="rounded object-contain hover:opacity-80 transition-opacity" />
                       </button>
@@ -1161,8 +1152,17 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                       </div>
                     )}
                   </div>
-                  <div className="text-xl font-bold text-green-700 whitespace-nowrap flex-shrink-0">
-                    ₪{Number(p.item_price).toFixed(2)}
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    <span className="text-xl font-bold text-green-700 whitespace-nowrap">₪{Number(p.item_price).toFixed(2)}</span>
+                    {(() => { const hasPriceHistory = (p.price_history?.length ?? 0) >= 2; return (
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); if (hasPriceHistory) setPriceHistoryProduct(p); }}
+                        disabled={!hasPriceHistory}
+                        className={`h-7 w-7 flex-shrink-0 rounded-lg border text-xs transition-colors ${hasPriceHistory ? "border-purple-400 bg-purple-50 text-purple-600 hover:border-purple-600 hover:bg-purple-100" : "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed grayscale opacity-60"}`}
+                        aria-label="היסטוריית מחיר"
+                      >📈</button>
+                    ); })()}
                   </div>
                 </div>
                 );
