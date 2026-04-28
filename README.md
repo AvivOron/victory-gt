@@ -15,6 +15,7 @@ Price and promotions viewer for the Victory branch in Ganei Tikva. The app reads
 - Product images displayed in table rows, cart, favourites, promos, and modals (served as static files, cached 7 days)
 - Email digest when a favourited product goes on sale — one email per scan with all relevant promos, unsubscribe link included
 - Recipe Finder — paste a recipe URL or describe a dish in free text; Gemini AI extracts Hebrew ingredients, matches them against live inventory, and returns a shopping list with add-to-cart and favourites actions; generated recipes can be emailed to the signed-in user
+- Price history chart — each product tracks up to 10 price points over time; a 📈 button opens a line chart modal showing price changes by date (enabled only when ≥2 data points exist)
 
 ## Stack
 
