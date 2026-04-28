@@ -43,6 +43,12 @@ A Next.js 16 grocery price comparison app (Israeli market). TypeScript + Tailwin
 - Hebrew normalization: `יי→י`, `וו→ו` applied to both search tokens (SQL OR variants) and scoring
 - Scoring: name-start match +6, whole-word +3, substring +1, category match +2, tiebreak by price asc
 
+## Price History
+- `products.price_history` — TEXT column storing `{"entries":[{price,date},...]}`, max 10 entries
+- Populated by the scanner: on first insert the array is empty; on each price change the old price is seeded (if history is empty) then the new price is appended; capped at 10
+- API parses and exposes it as `PricePoint[]` (`{price: number, date: string}`) on the `Product` type
+- UI: 📈 button per row — purple/enabled when `price_history.length >= 2`, grayscale/disabled otherwise; opens a recharts line chart modal
+
 ## Conventions
 - All new API routes go under `src/app/api/`
 - Tailwind v4 (PostCSS plugin) — no `tailwind.config.js`; config is in CSS
