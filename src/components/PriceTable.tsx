@@ -5,6 +5,7 @@ import NextImage from "next/image";
 import type { Product, Promo, PromoOriginalItem } from "@/lib/db";
 import { signIn, useSession } from "next-auth/react";
 import { BarcodeFormat, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 const PRODUCT_IMAGES_BASE = "/victory-gt";
 
@@ -142,6 +143,7 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
   const [scannerError, setScannerError] = useState<string | null>(null);
   const [scannerStatus, setScannerStatus] = useState("כוון את המצלמה אל הברקוד");
   const [scannerCode, setScannerCode] = useState<string | null>(null);
+  const [priceHistoryProduct, setPriceHistoryProduct] = useState<Product | null>(null);
   const [scannerProduct, setScannerProduct] = useState<Product | null>(null);
   const [scannerIsWeightMatch, setScannerIsWeightMatch] = useState(false);
   const [scannerLoadingProduct, setScannerLoadingProduct] = useState(false);
@@ -1027,6 +1029,15 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                                 </button>
                               ); })()}
                             </div>
+                            {(() => { const hasPriceHistory = (p.price_history?.length ?? 0) >= 2; return (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); if (hasPriceHistory) setPriceHistoryProduct(p); }}
+                                disabled={!hasPriceHistory}
+                                className={`h-8 w-8 flex-shrink-0 rounded-lg border text-sm transition-colors ${hasPriceHistory ? "border-purple-400 bg-purple-50 text-purple-600 hover:border-purple-600 hover:bg-purple-100" : "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed grayscale opacity-60"}`}
+                                aria-label="היסטוריית מחיר"
+                              >📈</button>
+                            ); })()}
                             <button type="button" onClick={e => { e.stopPropagation(); setImageModalProduct(p); }} className="flex-shrink-0">
                               <ProductImage itemCode={p.item_code} itemName={p.item_name} width={40} height={40} className="rounded object-contain hover:opacity-80 transition-opacity" />
                             </button>
@@ -1113,6 +1124,15 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                           </button>
                         ); })()}
                       </div>
+                      {(() => { const hasPriceHistory = (p.price_history?.length ?? 0) >= 2; return (
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); if (hasPriceHistory) setPriceHistoryProduct(p); }}
+                          disabled={!hasPriceHistory}
+                          className={`mt-0.5 h-8 w-8 flex-shrink-0 rounded-lg border text-sm transition-colors ${hasPriceHistory ? "border-purple-400 bg-purple-50 text-purple-600 hover:border-purple-600 hover:bg-purple-100" : "border-gray-200 bg-white text-gray-300 cursor-not-allowed opacity-50"}`}
+                          aria-label="היסטוריית מחיר"
+                        >📈</button>
+                      ); })()}
                       <button type="button" onClick={e => { e.stopPropagation(); setImageModalProduct(p); }} className="flex-shrink-0">
                         <ProductImage itemCode={p.item_code} itemName={p.item_name} width={40} height={40} className="rounded object-contain hover:opacity-80 transition-opacity" />
                       </button>
@@ -1281,6 +1301,9 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
           onDecrementCart={(item) => decrementCart({ item_code: item.item_code })}
           positiveNumber={positiveNumber}
         />
+      )}
+      {priceHistoryProduct && (
+        <PriceHistoryModal product={priceHistoryProduct} onClose={() => setPriceHistoryProduct(null)} />
       )}
       {recipeState !== "closed" && (
         <RecipeModal
@@ -2552,6 +2575,37 @@ function RecipeMarkdown({ markdown }: { markdown: string }) {
   flushList("fl-end");
 
   return <div className="mt-2 space-y-2">{elements}</div>;
+}
+
+function PriceHistoryModal({ product, onClose }: { product: Product; onClose: () => void }) {
+  const data = (product.price_history ?? []).map(p => ({ date: p.date, price: p.price }));
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 mb-5">
+          <h2 className="text-base font-bold leading-snug">{product.item_name}</h2>
+          <button type="button" onClick={onClose} className="flex-shrink-0 text-gray-400 hover:text-gray-700 text-xl leading-none">✕</button>
+        </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={data} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+            <YAxis tickFormatter={(v: number) => `₪${v}`} tick={{ fontSize: 11 }} width={52} />
+            <Tooltip formatter={(v) => [`₪${Number(v).toFixed(2)}`, "מחיר"]} labelStyle={{ direction: "ltr" }} />
+            <Line type="monotone" dataKey="price" stroke="#7c3aed" strokeWidth={2} dot={{ r: 4, fill: "#7c3aed" }} activeDot={{ r: 6 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
 }
 
 function PgBtn({ children, onClick, active, disabled }: { children: React.ReactNode; onClick?: () => void; active?: boolean; disabled?: boolean }) {

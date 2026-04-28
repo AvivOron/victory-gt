@@ -13,6 +13,11 @@ export const db = {
   },
 };
 
+export interface PricePoint {
+  price: number;
+  date: string;
+}
+
 export interface Product {
   item_code: string;
   item_name: string;
@@ -25,6 +30,7 @@ export interface Product {
   branch_id: string;
   last_updated: string;
   is_available: boolean;
+  price_history?: PricePoint[];
 }
 
 export interface Promo {

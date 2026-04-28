@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS products (
   category          TEXT,
   manufacturer_name TEXT,
   last_updated      TEXT,
+  is_available      BOOLEAN NOT NULL DEFAULT TRUE,
+  price_history     TEXT,  -- JSON {"entries":[{price,date},...]} max 10 entries
   PRIMARY KEY (item_code, branch_id)
 );
 

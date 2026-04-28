@@ -205,6 +205,7 @@ def ensure_schema() -> None:
     # Migrate: add columns if they don't exist yet (existing DBs)
     db_execute_ignore_errors([
         {"sql": "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_available BOOLEAN NOT NULL DEFAULT TRUE", "args": []},
+        {"sql": "ALTER TABLE products ADD COLUMN IF NOT EXISTS price_history TEXT", "args": []},
     ])
 
 
@@ -599,23 +600,61 @@ def upsert_branches(rows: list[dict]) -> None:
     log.info("Branches done")
 
 
+def _compute_price_histories(rows: list[dict]) -> dict[tuple, str]:
+    """Fetch existing prices for a batch and compute updated price_history JSON per row."""
+    if not rows:
+        return {}
+    keys = [(r["item_code"], r["branch_id"]) for r in rows]
+    placeholders = ",".join(["(%s,%s)"] * len(keys))
+    flat_args = [v for pair in keys for v in pair]
+    existing_rows = db_query(
+        f"SELECT item_code, branch_id, item_price, last_updated, price_history FROM products WHERE (item_code, branch_id) IN ({placeholders})",
+        flat_args,
+    )
+    existing = {(er["item_code"], er["branch_id"]): er for er in existing_rows}
+
+    result: dict[tuple, str] = {}
+    for r in rows:
+        key = (r["item_code"], r["branch_id"])
+        ex = existing.get(key)
+        if ex is None:
+            # New product — start with empty history; first data point added on next price change
+            result[key] = json.dumps({"entries": []})
+        else:
+            old_price = float(ex["item_price"]) if ex["item_price"] is not None else None
+            new_price = float(r["item_price"])
+            raw_history = ex.get("price_history")
+            history = json.loads(raw_history)["entries"] if raw_history else []
+            if old_price is not None and abs(old_price - new_price) > 0.001:
+                # Seed with old price if history is empty
+                if not history:
+                    history = [{"price": old_price, "date": ex.get("last_updated", r["last_updated"])[:10]}]
+                history.append({"price": new_price, "date": r["last_updated"][:10]})
+                history = history[-10:]  # keep last 10
+            result[key] = json.dumps({"entries": history})
+    return result
+
+
 def upsert_products(rows: list[dict]) -> None:
     if not rows:
         return
     log.info("Upserting %d products...", len(rows))
-    stmts = [
-        {"sql": """INSERT INTO products (item_code,branch_id,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,last_updated,is_available)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE)
-                   ON CONFLICT (item_code, branch_id) DO UPDATE SET
-                     item_name=EXCLUDED.item_name, item_price=EXCLUDED.item_price,
-                     unit_of_measure=EXCLUDED.unit_of_measure, quantity=EXCLUDED.quantity,
-                     category=EXCLUDED.category, manufacturer_name=EXCLUDED.manufacturer_name,
-                     last_updated=EXCLUDED.last_updated, is_available=TRUE""",
-         "args": [r["item_code"], r["branch_id"], r["item_name"], r["item_price"], r["unit_of_measure"], r["quantity"], r.get("category", DEFAULT_CATEGORY), r["manufacturer_name"], r["last_updated"]]}
-        for r in rows
-    ]
-    for i in range(0, len(stmts), BATCH):
-        db_execute(stmts[i : i + BATCH])
+    for batch_start in range(0, len(rows), BATCH):
+        batch = rows[batch_start : batch_start + BATCH]
+        histories = _compute_price_histories(batch)
+        stmts = [
+            {"sql": """INSERT INTO products (item_code,branch_id,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,last_updated,is_available,price_history)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE,%s)
+                       ON CONFLICT (item_code, branch_id) DO UPDATE SET
+                         item_name=EXCLUDED.item_name, item_price=EXCLUDED.item_price,
+                         unit_of_measure=EXCLUDED.unit_of_measure, quantity=EXCLUDED.quantity,
+                         category=EXCLUDED.category, manufacturer_name=EXCLUDED.manufacturer_name,
+                         last_updated=EXCLUDED.last_updated, is_available=TRUE,
+                         price_history=EXCLUDED.price_history""",
+             "args": [r["item_code"], r["branch_id"], r["item_name"], r["item_price"], r["unit_of_measure"], r["quantity"], r.get("category", DEFAULT_CATEGORY), r["manufacturer_name"], r["last_updated"], histories.get((r["item_code"], r["branch_id"]), json.dumps({"entries": []}))]}
+            for r in batch
+        ]
+        db_execute(stmts)
     log.info("Products done")
 
 

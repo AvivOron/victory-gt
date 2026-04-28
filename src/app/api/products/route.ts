@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
 
   const [dataResult, countResult] = await Promise.all([
     db.execute({
-      sql: `SELECT item_code,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,branch_id,last_updated,COALESCE(is_available,TRUE) as is_available
+      sql: `SELECT item_code,item_name,item_price,unit_of_measure,quantity,category,manufacturer_name,branch_id,last_updated,COALESCE(is_available,TRUE) as is_available,price_history
             FROM products ${where} ORDER BY COALESCE(is_available,TRUE) DESC, ${promoFirstExpr}${sortCol} ${dir} LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
       args,
     }),
@@ -185,6 +185,9 @@ export async function GET(req: NextRequest) {
       products: products.map(product => ({
         ...product,
         discount_promos: promosByCode.get(product.item_code) ?? [],
+        price_history: product.price_history
+          ? (JSON.parse(product.price_history as unknown as string) as { entries: { price: number; date: string }[] }).entries
+          : [],
       })),
       total,
       promoTotal: filteredPromoTotal,
