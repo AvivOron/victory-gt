@@ -2589,10 +2589,39 @@ function PriceHistoryModal({ product, onClose }: { product: Product; onClose: ()
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
             <YAxis tickFormatter={(v: number) => `₪${v}`} tick={{ fontSize: 11 }} width={52} />
-            <Tooltip formatter={(v) => [`₪${Number(v).toFixed(2)}`, "מחיר"]} labelStyle={{ direction: "ltr" }} />
+            <Tooltip
+              formatter={(v) => [`₪${Number(v).toFixed(2)}`, "מחיר"]}
+              labelStyle={{ direction: "ltr", fontFamily: "monospace" }}
+              contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}
+              wrapperStyle={{ zIndex: 9999 }}
+            />
             <Line type="monotone" dataKey="price" stroke="#7c3aed" strokeWidth={2} dot={{ r: 4, fill: "#7c3aed" }} activeDot={{ r: 6 }} />
           </LineChart>
         </ResponsiveContainer>
+        <table className="mt-4 w-full text-sm border-collapse">
+          <thead>
+            <tr className="border-b border-gray-200 text-gray-500 text-xs">
+              <th className="py-1.5 text-right font-medium">תאריך</th>
+              <th className="py-1.5 text-left font-medium">מחיר</th>
+              <th className="py-1.5 text-left font-medium">שינוי</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((row, i) => {
+              const prev = data[i - 1];
+              const diff = prev ? row.price - prev.price : null;
+              return (
+                <tr key={row.date} className="border-b border-gray-100 last:border-0">
+                  <td className="py-1.5 text-right font-mono text-gray-500 text-xs">{row.date}</td>
+                  <td className="py-1.5 text-left font-bold">₪{row.price.toFixed(2)}</td>
+                  <td className={`py-1.5 text-left text-xs font-medium ${diff === null ? "text-gray-400" : diff > 0 ? "text-red-500" : diff < 0 ? "text-green-600" : "text-gray-400"}`}>
+                    {diff === null ? "—" : diff > 0 ? `+₪${diff.toFixed(2)}` : `−₪${Math.abs(diff).toFixed(2)}`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
