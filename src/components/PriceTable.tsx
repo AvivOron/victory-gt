@@ -5,7 +5,9 @@ import NextImage from "next/image";
 import type { Product, Promo, PromoOriginalItem } from "@/lib/db";
 import { signIn, useSession } from "next-auth/react";
 import { BarcodeFormat, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Line } from "react-chartjs-2";
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Tooltip as ChartTooltip, Filler } from "chart.js";
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ChartTooltip, Filler);
 
 const PRODUCT_IMAGES_BASE = "/victory-gt";
 
@@ -2584,21 +2586,47 @@ function PriceHistoryModal({ product, onClose }: { product: Product; onClose: ()
           <h2 className="text-base font-bold leading-snug">{product.item_name}</h2>
           <button type="button" onClick={onClose} className="flex-shrink-0 text-gray-400 hover:text-gray-700 text-xl leading-none">✕</button>
         </div>
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={data} margin={{ top: 40, right: 60, left: 8, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={(v: number) => `₪${v}`} tick={{ fontSize: 11 }} width={52} />
-            <Tooltip
-              formatter={(v) => [`₪${Number(v).toFixed(2)}`, "מחיר"]}
-              labelStyle={{ direction: "ltr", fontFamily: "monospace" }}
-              contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}
-              wrapperStyle={{ zIndex: 9999 }}
-              allowEscapeViewBox={{ x: false, y: true }}
-            />
-            <Line type="monotone" dataKey="price" stroke="#7c3aed" strokeWidth={2} dot={{ r: 4, fill: "#7c3aed" }} activeDot={{ r: 6 }} />
-          </LineChart>
-        </ResponsiveContainer>
+        <Line
+          data={{
+            labels: data.map(p => p.date),
+            datasets: [{
+              data: data.map(p => p.price),
+              borderColor: "#7c3aed",
+              backgroundColor: "rgba(124,58,237,0.08)",
+              borderWidth: 2,
+              pointRadius: 5,
+              pointHoverRadius: 7,
+              pointBackgroundColor: "#7c3aed",
+              fill: true,
+              tension: 0.3,
+            }],
+          }}
+          options={{
+            responsive: true,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: ctx => `₪${Number(ctx.parsed.y).toFixed(2)}`,
+                },
+                backgroundColor: "#fff",
+                titleColor: "#374151",
+                bodyColor: "#7c3aed",
+                borderColor: "#e5e7eb",
+                borderWidth: 1,
+                padding: 10,
+                bodyFont: { weight: "bold" },
+              },
+            },
+            scales: {
+              x: { grid: { color: "#f0f0f0" }, ticks: { font: { size: 11 } } },
+              y: {
+                grid: { color: "#f0f0f0" },
+                ticks: { font: { size: 11 }, callback: v => `₪${v}` },
+              },
+            },
+          }}
+        />
         <table className="mt-4 w-full text-sm border-collapse">
           <thead>
             <tr className="border-b border-gray-200 text-gray-500 text-xs">
