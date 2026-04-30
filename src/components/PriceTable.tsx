@@ -2585,7 +2585,7 @@ function PriceHistoryModal({ product, onClose }: { product: Product; onClose: ()
           <button type="button" onClick={onClose} className="flex-shrink-0 text-gray-400 hover:text-gray-700 text-xl leading-none">✕</button>
         </div>
         <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={data} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+          <LineChart data={data} margin={{ top: 40, right: 60, left: 8, bottom: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
             <YAxis tickFormatter={(v: number) => `₪${v}`} tick={{ fontSize: 11 }} width={52} />
@@ -2594,6 +2594,7 @@ function PriceHistoryModal({ product, onClose }: { product: Product; onClose: ()
               labelStyle={{ direction: "ltr", fontFamily: "monospace" }}
               contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}
               wrapperStyle={{ zIndex: 9999 }}
+              allowEscapeViewBox={{ x: false, y: true }}
             />
             <Line type="monotone" dataKey="price" stroke="#7c3aed" strokeWidth={2} dot={{ r: 4, fill: "#7c3aed" }} activeDot={{ r: 6 }} />
           </LineChart>
