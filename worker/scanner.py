@@ -688,7 +688,7 @@ def notify_favourite_discounts(promos: list[dict]) -> None:
     if not RESEND_API_KEY or not promos:
         return
 
-    today = datetime.now().strftime("%Y/%m/%d")
+    today = datetime.now().strftime("%Y-%m-%d")
 
     # Build map of item_code -> list of promo dicts (only active promos)
     item_to_promos: dict[str, list[dict]] = {}
