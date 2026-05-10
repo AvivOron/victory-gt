@@ -1056,9 +1056,10 @@ def run_scan() -> None:
             log.info("No PriceFull in new files — skipping mark_unavailable_products")
         if has_full_promo:
             delete_stale_promos(branch_id, {p["promotion_id"] for p in promos})
-            notify_favourite_discounts(promos)
         else:
             log.info("No PromoFull in new files — skipping delete_stale_promos")
+        if promos:
+            notify_favourite_discounts(promos)
         today = datetime.now().strftime("%Y%m%d")
         kept = {f for f in processed_files | set(new_files) if today in f}
         with open(LAST_FILES_CACHE, "w") as fh:
