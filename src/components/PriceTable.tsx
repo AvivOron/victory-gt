@@ -47,6 +47,7 @@ interface ShoppingListItem {
   quantity: number;
   checked: boolean;
   category?: string | null;
+  note?: string | null;
   promo_label?: string | null;
 }
 
@@ -1240,6 +1241,14 @@ export default function PriceTable({ productCount, promoCount, branch, lastUpdat
                 body: JSON.stringify({ itemCode: item.item_code, force: true }),
               });
             }}
+            onNoteChange={async (item, note) => {
+              setShoppingList(current => current.map(i => i.item_code === item.item_code ? { ...i, note: note || null } : i));
+              await fetch("/victory-gt/api/shopping-list", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ itemCode: item.item_code, note }),
+              });
+            }}
             onResetCart={resetCart}
             onSignIn={promptGoogleSignIn}
             onJoinHousehold={joinHousehold}
@@ -1368,6 +1377,7 @@ function ShoppingListView({
   onAdd,
   onDecrement,
   onRemove,
+  onNoteChange,
   onResetCart,
   onSignIn,
   onJoinHousehold,
@@ -1381,6 +1391,7 @@ function ShoppingListView({
   onAdd: (item: ShoppingListItem) => void;
   onDecrement: (item: ShoppingListItem) => void;
   onRemove: (item: ShoppingListItem) => void;
+  onNoteChange: (item: ShoppingListItem, note: string) => void;
   onResetCart: () => void;
   onSignIn: () => void;
   onJoinHousehold: (inviteCode: string) => void | Promise<void>;
@@ -1444,7 +1455,7 @@ function ShoppingListView({
           <div key={`unchecked-${categoryName}`} className="space-y-2">
             <p className="px-1 pt-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{categoryName}</p>
             {categoryItems.map(item => (
-              <ShoppingListRow key={item.item_code} item={item} shoppingPendingCode={shoppingPendingCode} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} />
+              <ShoppingListRow key={item.item_code} item={item} shoppingPendingCode={shoppingPendingCode} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} onNoteChange={onNoteChange} />
             ))}
           </div>
         ))}
@@ -1455,7 +1466,7 @@ function ShoppingListView({
               <div key={`checked-${categoryName}`} className="space-y-2">
                 <p className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-300">{categoryName}</p>
                 {categoryItems.map(item => (
-                  <ShoppingListRow key={item.item_code} item={item} shoppingPendingCode={shoppingPendingCode} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} />
+                  <ShoppingListRow key={item.item_code} item={item} shoppingPendingCode={shoppingPendingCode} promoLabel={item.promo_label ?? undefined} onToggle={onToggleChecked} onAdd={onAdd} onDecrement={onDecrement} onRemove={onRemove} onNoteChange={onNoteChange} />
                 ))}
               </div>
             ))}
@@ -1759,6 +1770,7 @@ function ShoppingListRow({
   onAdd,
   onDecrement,
   onRemove,
+  onNoteChange,
 }: {
   item: ShoppingListItem;
   shoppingPendingCode: string | null;
@@ -1767,8 +1779,24 @@ function ShoppingListRow({
   onAdd: (item: ShoppingListItem) => void;
   onDecrement: (item: ShoppingListItem) => void;
   onRemove: (item: ShoppingListItem) => void;
+  onNoteChange: (item: ShoppingListItem, note: string) => void;
 }) {
   const [lightbox, setLightbox] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState(item.note ?? "");
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+
+  function openNote() {
+    setNoteText(item.note ?? "");
+    setNoteOpen(true);
+    setTimeout(() => noteRef.current?.focus(), 0);
+  }
+
+  function saveNote() {
+    setNoteOpen(false);
+    onNoteChange(item, noteText);
+  }
+
   return (
     <>
       {lightbox && (
@@ -1786,59 +1814,102 @@ function ShoppingListRow({
           </div>
         </div>
       )}
-    <div className={`grid grid-cols-[auto_auto_1fr_auto_auto] items-center gap-3 rounded-lg border bg-white p-4 shadow-sm transition-colors ${item.checked ? "border-gray-100 opacity-60" : "border-gray-200"}`}>
-      {/* checkbox */}
-      <button
-        type="button"
-        onClick={() => onToggle(item)}
-        className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded border-2 transition-colors ${item.checked ? "border-green-500 bg-green-500" : "border-gray-300 hover:border-green-500"}`}
-        aria-label={item.checked ? "סמן כלא נאסף" : "סמן כנאסף"}
-      >
-        {item.checked && <span className="text-white text-xs font-bold leading-none">✓</span>}
-      </button>
-      {/* product image */}
-      <NextImage
-        src={`/victory-gt/products/${item.item_code}.jpg`}
-        alt={item.item_name}
-        width={40}
-        height={40}
-        className="h-10 w-10 flex-shrink-0 rounded-md border border-gray-100 object-contain bg-white cursor-zoom-in"
-        onClick={() => setLightbox(true)}
-        onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-      />
-      {/* name + barcode */}
-      <div className="min-w-0 text-right">
-        <p className={`font-semibold text-sm leading-snug ${item.checked ? "line-through text-gray-400" : "text-[#171717]"}`}>
-          {item.item_name}
-        </p>
-        <p className="text-xs text-gray-400 mt-0.5 font-mono" dir="ltr">{item.item_code}</p>
-        {promoLabel && !item.checked && (
-          <span className="mt-1 inline-block rounded border border-[#e31837]/30 bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-[#e31837]">{promoLabel}</span>
-        )}
-      </div>
-      {/* qty + price */}
-      <div className="flex flex-col items-end gap-1">
-        <div className={`flex items-center rounded-lg border overflow-hidden ${item.checked ? "border-gray-200 text-gray-300" : "border-green-600 text-green-700"}`}>
-          <button type="button" onClick={() => onDecrement(item)} className="h-7 w-6 text-sm leading-none hover:bg-green-50 transition-colors" aria-label="הפחת כמות">−</button>
-          <span className="flex min-w-[1.25rem] items-center justify-center text-center text-sm font-bold tabular-nums">
-            {shoppingPendingCode === item.item_code ? <InlineSpinner /> : item.quantity}
-          </span>
-          <button type="button" onClick={() => onAdd(item)} disabled={shoppingPendingCode === item.item_code} className="h-7 w-6 text-sm leading-none hover:bg-green-50 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
+    <div className={`rounded-lg border bg-white shadow-sm transition-colors ${item.checked ? "border-gray-100 opacity-60" : "border-gray-200"}`}>
+      <div className="grid grid-cols-[auto_auto_1fr_auto_auto] items-center gap-3 p-4">
+        {/* checkbox */}
+        <button
+          type="button"
+          onClick={() => onToggle(item)}
+          className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded border-2 transition-colors ${item.checked ? "border-green-500 bg-green-500" : "border-gray-300 hover:border-green-500"}`}
+          aria-label={item.checked ? "סמן כלא נאסף" : "סמן כנאסף"}
+        >
+          {item.checked && <span className="text-white text-xs font-bold leading-none">✓</span>}
+        </button>
+        {/* product image */}
+        <NextImage
+          src={`/victory-gt/products/${item.item_code}.jpg`}
+          alt={item.item_name}
+          width={40}
+          height={40}
+          className="h-10 w-10 flex-shrink-0 rounded-md border border-gray-100 object-contain bg-white cursor-zoom-in"
+          onClick={() => setLightbox(true)}
+          onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+        />
+        {/* name + barcode */}
+        <div className="min-w-0 text-right">
+          <p className={`font-semibold text-sm leading-snug ${item.checked ? "line-through text-gray-400" : "text-[#171717]"}`}>
+            {item.item_name}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5 font-mono" dir="ltr">{item.item_code}</p>
+          {promoLabel && !item.checked && (
+            <span className="mt-1 inline-block rounded border border-[#e31837]/30 bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-[#e31837]">{promoLabel}</span>
+          )}
         </div>
-        <p className={`text-xs font-bold whitespace-nowrap tabular-nums ${item.checked ? "text-gray-300" : "text-green-700"}`} dir="ltr">
-          ₪{(item.item_price * item.quantity).toFixed(2)}
-          {item.quantity > 1 && <span className="font-normal text-gray-400"> (₪{item.item_price.toFixed(2)} ליח׳)</span>}
-        </p>
+        {/* qty + price */}
+        <div className="flex flex-col items-end gap-1">
+          <div className={`flex items-center rounded-lg border overflow-hidden ${item.checked ? "border-gray-200 text-gray-300" : "border-green-600 text-green-700"}`}>
+            <button type="button" onClick={() => onDecrement(item)} className="h-7 w-6 text-sm leading-none hover:bg-green-50 transition-colors" aria-label="הפחת כמות">−</button>
+            <span className="flex min-w-[1.25rem] items-center justify-center text-center text-sm font-bold tabular-nums">
+              {shoppingPendingCode === item.item_code ? <InlineSpinner /> : item.quantity}
+            </span>
+            <button type="button" onClick={() => onAdd(item)} disabled={shoppingPendingCode === item.item_code} className="h-7 w-6 text-sm leading-none hover:bg-green-50 transition-colors disabled:opacity-60" aria-label="הוסף כמות">+</button>
+          </div>
+          <p className={`text-xs font-bold whitespace-nowrap tabular-nums ${item.checked ? "text-gray-300" : "text-green-700"}`} dir="ltr">
+            ₪{(item.item_price * item.quantity).toFixed(2)}
+            {item.quantity > 1 && <span className="font-normal text-gray-400"> (₪{item.item_price.toFixed(2)} ליח׳)</span>}
+          </p>
+        </div>
+        {/* remove */}
+        <button
+          type="button"
+          onClick={() => onRemove(item)}
+          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:border-[#e31837] hover:text-[#e31837] transition-colors text-base leading-none"
+          aria-label="הסרה מהרשימה"
+        >
+          ×
+        </button>
       </div>
-      {/* remove */}
-      <button
-        type="button"
-        onClick={() => onRemove(item)}
-        className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:border-[#e31837] hover:text-[#e31837] transition-colors text-base leading-none"
-        aria-label="הסרה מהרשימה"
-      >
-        ×
-      </button>
+      {/* note row */}
+      {!noteOpen && item.note && (
+        <div
+          className="flex items-start gap-2 border-t border-gray-100 px-4 py-2 cursor-pointer hover:bg-gray-50 transition-colors"
+          onClick={openNote}
+          role="button"
+          aria-label="ערוך הערה"
+        >
+          <span className="text-gray-400 text-xs mt-0.5 flex-shrink-0">📝</span>
+          <p className="text-xs text-gray-500 text-right leading-snug flex-1">{item.note}</p>
+        </div>
+      )}
+      {!noteOpen && !item.note && (
+        <div className="flex justify-start border-t border-gray-100 px-4 py-1.5">
+          <button
+            type="button"
+            onClick={openNote}
+            className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1"
+          >
+            <span>+</span> הוסף הערה
+          </button>
+        </div>
+      )}
+      {noteOpen && (
+        <div className="border-t border-gray-100 px-4 py-3 flex flex-col gap-2">
+          <textarea
+            ref={noteRef}
+            value={noteText}
+            onChange={e => setNoteText(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveNote(); } if (e.key === "Escape") { setNoteOpen(false); } }}
+            placeholder="הערה לכל המשפחה..."
+            rows={2}
+            className="w-full resize-none rounded border border-gray-200 px-3 py-2 text-sm text-right placeholder:text-gray-300 focus:border-blue-400 focus:outline-none"
+            dir="rtl"
+          />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setNoteOpen(false)} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1">ביטול</button>
+            <button type="button" onClick={saveNote} className="text-xs bg-blue-500 text-white rounded px-3 py-1 hover:bg-blue-600 transition-colors">שמור</button>
+          </div>
+        </div>
+      )}
     </div>
     </>
   );

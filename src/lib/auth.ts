@@ -1,13 +1,15 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 
+const secure = process.env.NODE_ENV === "production";
+
 export const authOptions: NextAuthOptions = {
   cookies: {
-    sessionToken: { name: "__Secure-victory.session-token", options: { httpOnly: true, sameSite: "lax", path: "/", secure: true } },
-    callbackUrl: { name: "__Secure-victory.callback-url", options: { httpOnly: true, sameSite: "lax", path: "/", secure: true } },
-    csrfToken: { name: "__Host-victory.csrf-token", options: { httpOnly: true, sameSite: "lax", path: "/", secure: true } },
-    pkceCodeVerifier: { name: "__Secure-victory.pkce.code_verifier", options: { httpOnly: true, sameSite: "lax", path: "/", secure: true } },
-    state: { name: "__Secure-victory.state", options: { httpOnly: true, sameSite: "lax", path: "/", secure: true } },
+    sessionToken: { name: `${secure ? "__Secure-" : ""}victory.session-token`, options: { httpOnly: true, sameSite: "lax", path: "/", secure } },
+    callbackUrl: { name: `${secure ? "__Secure-" : ""}victory.callback-url`, options: { httpOnly: true, sameSite: "lax", path: "/", secure } },
+    csrfToken: { name: `${secure ? "__Host-" : ""}victory.csrf-token`, options: { httpOnly: true, sameSite: "lax", path: "/", secure } },
+    pkceCodeVerifier: { name: `${secure ? "__Secure-" : ""}victory.pkce.code_verifier`, options: { httpOnly: true, sameSite: "lax", path: "/", secure } },
+    state: { name: `${secure ? "__Secure-" : ""}victory.state`, options: { httpOnly: true, sameSite: "lax", path: "/", secure } },
   },
   providers: [
     GoogleProvider({

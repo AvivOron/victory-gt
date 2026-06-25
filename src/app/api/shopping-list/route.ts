@@ -13,7 +13,7 @@ export async function GET() {
   const household = await getOrCreateCurrentHousehold(user);
 
   const result = await db.execute({
-    sql: `SELECT item_code, item_name, item_price, category, quantity, checked
+    sql: `SELECT item_code, item_name, item_price, category, quantity, checked, note
           FROM shopping_list_items WHERE household_id = ? ORDER BY created_at ASC`,
     args: [household.householdId],
   });
@@ -25,6 +25,7 @@ export async function GET() {
     quantity: Number(row.quantity ?? 1),
     checked: row.checked === 1 || row.checked === true,
     category: row.category == null ? null : String(row.category),
+    note: row.note == null ? null : String(row.note),
     promo_label: null as string | null,
   }));
 
@@ -146,6 +147,33 @@ export async function DELETE(request: Request) {
       args: [household.householdId, itemCode],
     });
   }
+
+  return Response.json({ ok: true });
+}
+
+// PUT: update note
+export async function PUT(request: Request) {
+  const session = await getServerSession(authOptions);
+  const user = getSessionUser(session);
+
+  if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
+  const household = await getOrCreateCurrentHousehold(user);
+
+  const body = await request.json().catch(() => null) as {
+    itemCode?: unknown; note?: unknown;
+  } | null;
+
+  const itemCode = typeof body?.itemCode === "string" ? body.itemCode.trim() : "";
+  const note = typeof body?.note === "string" ? body.note.trim() : null;
+
+  if (!itemCode) {
+    return Response.json({ error: "itemCode is required" }, { status: 400 });
+  }
+
+  await db.execute({
+    sql: "UPDATE shopping_list_items SET note = ?, updated_at = CURRENT_TIMESTAMP WHERE household_id = ? AND item_code = ?",
+    args: [note || null, household.householdId, itemCode],
+  });
 
   return Response.json({ ok: true });
 }

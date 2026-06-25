@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS shopping_list_items (
   quantity         INTEGER DEFAULT 1,
   checked          INTEGER DEFAULT 0,
   added_by_user_id TEXT,
+  note             TEXT,
   created_at       TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at       TEXT DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (household_id, item_code)
